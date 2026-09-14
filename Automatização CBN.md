@@ -92,26 +92,43 @@ O repositório GitHub está público. Arquivos de clientes, base de produtos e d
 
 ## Situação atual
 
+Última atualização: 14 de setembro de 2026.
+
 Concluído:
 
-- interface inicial;
-- modelos principais;
-- modelo personalizado;
-- importação de Excel/CSV;
+- interface inicial do conversor;
+- modelos Piraquara, Ouro Branco, WG Adega Brasil, Dalpar e Flex CBN;
+- modelo personalizado editável;
+- importação de Excel e CSV;
 - configuração das colunas;
 - regra de multiplicação do Ouro Branco;
-- exportação EAN/quantidade;
-- mapeamento dos arquivos reais;
-- estrutura do banco Supabase;
-- prompt mestre.
+- exportação com as colunas EAN e Quantidade;
+- mapeamento inicial dos arquivos reais;
+- estrutura do banco no Supabase;
+- políticas de segurança RLS;
+- conexão da aplicação com o Supabase;
+- autenticação por link enviado ao e-mail;
+- endereço de retorno configurado para o GitHub Pages;
+- aplicação publicada no GitHub Pages;
+- mensagem mais clara para limite temporário de envio de e-mails;
+- prompt mestre e documentação inicial.
+
+Endereço da aplicação:
+
+- https://felipefraxino.github.io/Automa-o-Pedidos/
+
+Situação em teste:
+
+- primeiro acesso por e-mail;
+- limite temporário do provedor de e-mail gratuito do Supabase após várias solicitações.
 
 Próximas etapas:
 
-1. Conectar o projeto Supabase à aplicação.
-2. Importar a base de produtos de forma privada.
-3. Implementar autenticação.
-4. Implementar PDF e OCR.
-5. Criar a tela de revisão.
-6. Implementar separação e downloads por indústria.
-7. Implementar comparação de orçamento e pedido.
-8. Publicar a aplicação.
+1. Confirmar o primeiro acesso ao conversor.
+2. Testar a conversão com uma planilha real de cada cliente.
+3. Corrigir as regras específicas identificadas nos testes.
+4. Importar a base de produtos de forma privada.
+5. Implementar leitura de PDF e OCR de imagens.
+6. Criar a tela de revisão dos itens identificados.
+7. Implementar separação e downloads por indústria.
+8. Implementar comparação entre orçamento enviado e pedido recebido.
