@@ -61,7 +61,12 @@ function LoginScreen() {
     })
     setSending(false)
     if (authError) {
-      setError('Não foi possível enviar o acesso. Confira o e-mail e tente novamente.')
+      const rateLimited = authError.status === 429 || /rate.?limit|too many requests|email rate limit/i.test(authError.message || '')
+      setError(
+        rateLimited
+          ? 'Foram solicitados vários links em pouco tempo. Aguarde alguns minutos e tente novamente apenas uma vez.'
+          : 'Não foi possível enviar o acesso agora. Verifique a configuração do e-mail no Supabase e tente novamente.'
+      )
       return
     }
     setSent(true)
