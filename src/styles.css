@@ -109,3 +109,27 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .action-bar { align-items: stretch; flex-direction: column; }
   .primary-button { justify-content: center; }
 }
+
+.top-actions { display: flex; gap: 9px; }
+.auth-loading { min-height: 100vh; display: grid; place-items: center; color: #557084; background: #f3f6f9; }
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at top left, #1b567f, #0b2c4b 48%, #071e34); }
+.login-card { width: min(430px, 100%); padding: 42px; background: white; border-radius: 20px; box-shadow: 0 30px 80px rgba(0,0,0,.28); }
+.login-brand { width: 56px; height: 56px; display: grid; place-items: center; color: white; background: #f16f2e; border-radius: 15px; margin-bottom: 23px; }
+.login-card > p { margin: 0 0 8px; color: #ec6d2e; font-size: 11px; font-weight: 700; letter-spacing: 1.4px; }
+.login-card h1 { margin: 0 0 9px; color: #173a54; font-size: 28px; }
+.login-card > span { display: block; color: #718696; font-size: 14px; line-height: 1.55; margin-bottom: 25px; }
+.login-card form { display: grid; gap: 15px; }
+.email-field { display: flex; align-items: center; gap: 9px; margin-top: 7px; padding: 0 12px; border: 1px solid #d7e1e8; border-radius: 9px; color: #7890a1; }
+.email-field:focus-within { border-color: #477ca3; box-shadow: 0 0 0 3px rgba(71,124,163,.1); }
+.email-field input { margin: 0; padding: 12px 0; border: 0; box-shadow: none; background: transparent; }
+.login-card form > button { border: 0; border-radius: 9px; padding: 13px; color: white; background: #153f64; font-weight: 700; }
+.login-card form > button:disabled { opacity: .6; cursor: wait; }
+.login-error { color: #9d3935; background: #fff0ef; border-radius: 8px; padding: 10px; font-size: 12px; }
+.login-sent { padding-top: 10px; display: grid; justify-items: center; text-align: center; gap: 10px; color: #287651; }
+.login-sent strong { color: #173a54; font-size: 18px; }
+.login-sent span { color: #718696; font-size: 13px; }
+.login-sent button { border: 0; background: transparent; color: #1d5d8d; font-weight: 600; margin-top: 8px; }
+@media (max-width: 800px) {
+  .top-actions { gap: 5px; }
+  .login-card { padding: 30px 24px; }
+}
