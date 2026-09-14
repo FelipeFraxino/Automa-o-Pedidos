@@ -1,22 +1,46 @@
 # Automatização CBN
 
-Sistema web para converter planilhas de pedidos de diferentes clientes para o padrão:
+Sistema para converter pedidos comerciais em Excel, CSV, PDF ou imagem, separar os produtos por indústria e gerar arquivos prontos para digitação.
 
-| EAN | Quantidade |
-| --- | --- |
-| Código de barras | Quantidade inteira |
+## Indústrias
 
-## Funcionalidades da primeira versão
+- Reckitt
+- L'Oréal
+- 3M
 
-- Modelos para Rede Piraquara, Ouro Branco e Adega Brasil;
-- Modelo personalizado e criação de modelos adicionais;
-- Importação de arquivos XLSX, XLS e CSV;
-- Seleção da linha de cabeçalho;
-- Detecção inicial de colunas de EAN e quantidade;
-- Prévia dos registros convertidos;
-- Exportação para Excel com as colunas `EAN` e `Quantidade`;
-- Configurações salvas localmente;
-- Estrutura preparada para integração com Supabase.
+## Modelos mapeados
+
+- Rede Piraquara
+- Ouro Branco
+- WG Adega Brasil
+- Dalpar
+- Orçamento Flex CBN
+- Modelo personalizado editável
+
+As regras observadas nos arquivos reais estão em [docs/MAPEAMENTO-DOS-ARQUIVOS.md](docs/MAPEAMENTO-DOS-ARQUIVOS.md).
+
+## O que já funciona
+
+- Interface web responsiva;
+- Importação de XLSX, XLS e CSV;
+- Criação e edição de modelos;
+- Seleção da linha de cabeçalho e colunas;
+- Quantidade direta;
+- Multiplicação de embalagem por quantidade para o Ouro Branco;
+- Prévia do resultado;
+- Exportação com EAN e quantidade;
+- Configurações locais.
+
+## Em desenvolvimento
+
+- Leitura de PDF digital;
+- OCR de imagens e PDFs escaneados;
+- Importação privada da base “códigos que trabalho”;
+- Separação automática de Reckitt, L'Oréal e 3M;
+- Tela de revisão para leituras incertas;
+- Comparação entre orçamento e pedido;
+- Geração dos três arquivos separados;
+- Autenticação e armazenamento no Supabase.
 
 ## Executar localmente
 
@@ -25,15 +49,18 @@ npm install
 npm run dev
 ```
 
-## Supabase
+## Configurar o Supabase
 
-1. Execute o arquivo `supabase/schema.sql` no SQL Editor do Supabase.
-2. Copie `.env.example` para `.env.local`.
-3. Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
-4. Reinicie a aplicação.
+1. Abra o SQL Editor do projeto Supabase.
+2. Execute [supabase/schema.sql](supabase/schema.sql).
+3. Copie `.env.example` para `.env.local`.
+4. Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
+5. Reinicie a aplicação.
 
-A tabela usa políticas para usuários autenticados. A autenticação será ligada na próxima etapa, quando o projeto Supabase estiver disponível.
+Não envie a base de produtos, pedidos ou PDFs de clientes ao repositório enquanto ele estiver público. Esses dados serão armazenados de forma privada no Supabase.
 
-## Próxima etapa
+## Documentação
 
-Enviar exemplos reais das planilhas da Rede Piraquara, Ouro Branco e Adega Brasil, além da planilha final desejada. Com esses arquivos, serão implementadas as regras exatas de identificação e conversão automática de cada modelo.
+- [Mapeamento dos arquivos](docs/MAPEAMENTO-DOS-ARQUIVOS.md)
+- [Prompt mestre](docs/PROMPT-MESTRE.md)
+- [Documento do projeto](Automatiza%C3%A7%C3%A3o%20CBN.md)
