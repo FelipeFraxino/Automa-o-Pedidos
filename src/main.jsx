@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as XLSX from 'xlsx'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
-  CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw
+  CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail
 } from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
@@ -45,7 +45,73 @@ const cleanQuantity = value => {
   return Number.isFinite(number) ? Math.trunc(number) : null
 }
 
-function App() {
+function LoginScreen() {
+  const [email, setEmail] = useState('')
+  const [sent, setSent] = useState(false)
+  const [error, setError] = useState('')
+  const [sending, setSending] = useState(false)
+
+  const requestLink = async event => {
+    event.preventDefault()
+    setSending(true)
+    setError('')
+    const { error: authError } = await supabase.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin, shouldCreateUser: true },
+    })
+    setSending(false)
+    if (authError) {
+      setError('Não foi possível enviar o acesso. Confira o e-mail e tente novamente.')
+      return
+    }
+    setSent(true)
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand"><FileSpreadsheet size={28} /></div>
+        <p>AUTOMATIZAÇÃO CBN</p>
+        <h1>Acesse o conversor</h1>
+        {!sent ? (
+          <>
+            <span>Informe seu e-mail. Você receberá um link seguro para entrar, sem senha.</span>
+            <form onSubmit={requestLink}>
+              <label>E-mail
+                <div className="email-field"><Mail size={18} /><input type="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="seuemail@exemplo.com" /></div>
+              </label>
+              {error && <div className="login-error">{error}</div>}
+              <button disabled={sending}>{sending ? 'Enviando…' : 'Enviar acesso por e-mail'}</button>
+            </form>
+          </>
+        ) : (
+          <div className="login-sent">
+            <CheckCircle2 size={32} />
+            <strong>Confira seu e-mail</strong>
+            <span>Enviamos o link de acesso para {email}.</span>
+            <button onClick={() => setSent(false)}>Usar outro e-mail</button>
+          </div>
+        )}
+      </section>
+    </main>
+  )
+}
+
+function AuthenticatedApp() {
+  const [session, setSession] = useState(undefined)
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
+    return () => subscription.unsubscribe()
+  }, [])
+
+  if (session === undefined) return <div className="auth-loading">Carregando…</div>
+  if (!session) return <LoginScreen />
+  return <App session={session} />
+}
+
+function App({ session }) {
   const [models, setModels] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('cbn-models') || '[]')
@@ -245,7 +311,10 @@ function App() {
             <h1>{selected.name}</h1>
             <span>{selected.description}</span>
           </div>
-          <button className="ghost-button" onClick={saveCurrentModel}><Settings2 size={17} /> Salvar configuração</button>
+<div className="top-actions">
+            <button className="ghost-button" onClick={saveCurrentModel}><Settings2 size={17} /> Salvar configuração</button>
+            <button className="ghost-button" onClick={() => supabase.auth.signOut()} title={session.user.email}><LogOut size={17} /> Sair</button>
+          </div>
         </header>
 
         <section className="content">
@@ -351,4 +420,4 @@ function App() {
   )
 }
 
-createRoot(document.getElementById('root')).render(<React.StrictMode><App /></React.StrictMode>)
+createRoot(document.getElementById('root')).render(<React.StrictMode><AuthenticatedApp /></React.StrictMode>)
