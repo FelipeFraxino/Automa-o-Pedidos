@@ -9,10 +9,12 @@ import { supabase } from './supabase'
 import './styles.css'
 
 const BASE_MODELS = [
-  { id: 'piraquara', name: 'Rede Piraquara', description: 'Modelo de pedidos da Rede Piraquara', headerRow: 1, eanColumn: '', quantityColumn: '', fixed: true },
-  { id: 'ouro-branco', name: 'Ouro Branco', description: 'Modelo de pedidos do Ouro Branco', headerRow: 1, eanColumn: '', quantityColumn: '', fixed: true },
-  { id: 'adega-brasil', name: 'Adega Brasil', description: 'Modelo de pedidos da Adega Brasil', headerRow: 1, eanColumn: '', quantityColumn: '', fixed: true },
-  { id: 'personalizado', name: 'Modelo personalizado', description: 'Configure livremente para outras redes e clientes', headerRow: 1, eanColumn: '', quantityColumn: '', fixed: false },
+  { id: 'piraquara', name: 'Rede Piraquara', description: 'Quantidade direta; ignora a seção Trocas Pendentes', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
+  { id: 'ouro-branco', name: 'Ouro Branco', description: 'Quantidade final calculada por Embalagem × Qtde', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'multiply', fixed: true },
+  { id: 'adega-brasil', name: 'WG Adega Brasil', description: 'Quantidade direta; embalagem é apenas a apresentação do produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
+  { id: 'dalpar', name: 'Dalpar', description: 'Pedido recebido como imagem; separação por marca e produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
+  { id: 'flex-cbn', name: 'Orçamento Flex CBN', description: 'Prefixos RB, LO e SB identificam a indústria', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
+  { id: 'personalizado', name: 'Modelo personalizado', description: 'Configure livremente para outras redes e clientes', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
 ]
 
 const normalize = value => String(value ?? '').trim().toLowerCase()
@@ -60,6 +62,8 @@ function App() {
   const [headerRow, setHeaderRow] = useState(1)
   const [eanColumn, setEanColumn] = useState('')
   const [quantityColumn, setQuantityColumn] = useState('')
+  const [packageColumn, setPackageColumn] = useState('')
+  const [quantityMode, setQuantityMode] = useState('direct')
   const [message, setMessage] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef(null)
@@ -71,17 +75,25 @@ function App() {
     if (!workbookRows.length || !eanColumn || !quantityColumn) return []
     const eanIndex = headers.indexOf(eanColumn)
     const quantityIndex = headers.indexOf(quantityColumn)
+    const packageIndex = headers.indexOf(packageColumn)
     if (eanIndex < 0 || quantityIndex < 0) return []
     return workbookRows
       .slice(headerRow)
-      .map(row => ({ EAN: cleanEan(row[eanIndex]), Quantidade: cleanQuantity(row[quantityIndex]) }))
+      .map(row => {
+        const ordered = cleanQuantity(row[quantityIndex])
+        const pack = quantityMode === 'multiply' ? cleanQuantity(row[packageIndex]) : 1
+        const quantity = ordered !== null && pack !== null ? ordered * pack : null
+        return { EAN: cleanEan(row[eanIndex]), Quantidade: quantity }
+      })
       .filter(item => item.EAN && item.Quantidade !== null && item.Quantidade !== 0)
-  }, [workbookRows, headerRow, eanColumn, quantityColumn, headers.join('|')])
+  }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, headers.join('|')])
 
   useEffect(() => {
     setHeaderRow(selected.headerRow || 1)
     setEanColumn(selected.eanColumn || '')
     setQuantityColumn(selected.quantityColumn || '')
+    setPackageColumn(selected.packageColumn || '')
+    setQuantityMode(selected.quantityMode || 'direct')
     setMessage(null)
   }, [selectedId])
 
@@ -118,7 +130,7 @@ function App() {
   }
 
   const saveCurrentModel = async () => {
-    const updated = { ...selected, headerRow, eanColumn, quantityColumn }
+    const updated = { ...selected, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode }
     const next = models.map(model => model.id === selected.id ? updated : model)
     persistModels(next)
 
@@ -130,6 +142,8 @@ function App() {
         linha_cabecalho: updated.headerRow,
         coluna_ean: updated.eanColumn,
         coluna_quantidade: updated.quantityColumn,
+        coluna_embalagem: updated.packageColumn,
+        regra_quantidade: updated.quantityMode,
         atualizado_em: new Date().toISOString(),
       })
       if (error) {
@@ -150,6 +164,8 @@ function App() {
       headerRow: 1,
       eanColumn: '',
       quantityColumn: '',
+      packageColumn: '',
+      quantityMode: 'direct',
       fixed: false,
     }
     const next = [...models, model]
@@ -186,6 +202,7 @@ function App() {
     setSheetName('')
     setEanColumn(selected.eanColumn || '')
     setQuantityColumn(selected.quantityColumn || '')
+    setPackageColumn(selected.packageColumn || '')
     setMessage(null)
   }
 
@@ -278,12 +295,26 @@ function App() {
                       {headers.map((header, index) => <option key={index} value={header}>{header}</option>)}
                     </select>
                   </label>
+                  <label>Regra da quantidade
+                    <select value={quantityMode} onChange={event => setQuantityMode(event.target.value)}>
+                      <option value="direct">Usar quantidade direta</option>
+                      <option value="multiply">Multiplicar embalagem × quantidade</option>
+                    </select>
+                  </label>
                   <label>Coluna da quantidade
                     <select value={quantityColumn} onChange={event => setQuantityColumn(event.target.value)}>
                       <option value="">Selecione uma coluna</option>
                       {headers.map((header, index) => <option key={index} value={header}>{header}</option>)}
                     </select>
                   </label>
+                  {quantityMode === 'multiply' && (
+                    <label>Coluna da embalagem
+                      <select value={packageColumn} onChange={event => setPackageColumn(event.target.value)}>
+                        <option value="">Selecione uma coluna</option>
+                        {headers.map((header, index) => <option key={index} value={header}>{header}</option>)}
+                      </select>
+                    </label>
+                  )}
                 </div>
               </div>
 
