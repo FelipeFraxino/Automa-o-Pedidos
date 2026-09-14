@@ -107,6 +107,8 @@ Concluído:
 - estrutura do banco no Supabase;
 - políticas de segurança RLS;
 - conexão da aplicação com o Supabase;
+- importação privada dos 1.627 registros da base “códigos que trabalho”;
+- classificação inicial entre produtos válidos e códigos para revisão;
 - autenticação por link enviado ao e-mail;
 - endereço de retorno configurado para o GitHub Pages;
 - aplicação publicada no GitHub Pages;
@@ -124,14 +126,13 @@ Situação em teste:
 
 Próximas etapas:
 
-1. Confirmar o primeiro acesso ao conversor.
-2. Testar a conversão com uma planilha real de cada cliente.
-3. Corrigir as regras específicas identificadas nos testes.
-4. Importar a base de produtos de forma privada.
-5. Implementar leitura de PDF e OCR de imagens.
-6. Criar a tela de revisão dos itens identificados.
-7. Implementar separação e downloads por indústria.
-8. Implementar comparação entre orçamento enviado e pedido recebido.
+1. Testar a conversão com uma planilha real de cada cliente.
+2. Implementar a leitura dos PDFs digitais de Piraquara, Ouro Branco e Flex CBN.
+3. Implementar OCR para Adega Brasil e Dalpar.
+4. Criar a tela de revisão dos itens identificados.
+5. Implementar separação e downloads por indústria.
+6. Implementar comparação entre orçamento enviado e pedido recebido.
+7. Automatizar futuramente a digitação no sistema da indústria, mantendo conferência humana antes do faturamento.
 9. Depois que o conversor e os testes estiverem estáveis, iniciar a automação da digitação do pedido no portal/sistema da CBN.
 
 ## Próxima fase: automação da digitação no portal CBN
