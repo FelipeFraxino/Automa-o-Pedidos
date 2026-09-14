@@ -1,78 +1,117 @@
-# Automação de Pedidos
-
-Projeto para padronizar e reorganizar planilhas de pedidos comerciais.
+# Automatização CBN
 
 ## Objetivo
 
-Receber planilhas de diferentes clientes, identificar automaticamente o formato de cada uma e convertê-las para o padrão final definido pelo usuário.
+Transformar pedidos recebidos em Excel, CSV, PDF ou imagem em arquivos organizados por indústria, reduzindo a digitação manual e os erros de EAN e quantidade.
 
-## Clientes e formatos de origem
+O sistema deve atender Reckitt, L'Oréal e 3M e permitir a criação de novos modelos de cliente.
 
-### Rede Piraquara
+## Fluxo do sistema
 
-Status: aguardando o envio da planilha de exemplo.
+1. O usuário escolhe ou deixa o sistema detectar o modelo do arquivo.
+2. O sistema extrai EAN, descrição, marca, código CBN, embalagem e quantidade.
+3. Os itens são confrontados com a base “códigos que trabalho”.
+4. O sistema calcula a quantidade final de acordo com o modelo.
+5. Os itens são classificados como Reckitt, L'Oréal, 3M ou não identificados.
+6. Uma tela apresenta itens incertos para revisão.
+7. O sistema soma EANs repetidos dentro da mesma indústria.
+8. São gerados arquivos separados para digitação.
 
-Nesta seção serão registrados:
+## Base “códigos que trabalho”
 
-- Como identificar a planilha;
-- Nome e posição das colunas;
-- Estrutura dos produtos e quantidades;
-- Particularidades do arquivo;
-- Regras necessárias para reorganização.
+A base analisada contém 1.627 registros:
+
+- 678 Reckitt;
+- 487 L'Oréal;
+- 462 3M.
+
+Ela também contém materiais promocionais, displays, serviços e códigos internos. Por isso, o catálogo terá uma situação para cada registro: produto, material, serviço ou a revisar.
+
+A identificação da indústria usa:
+
+- Reckitt: código CBN `RB...` ou produto `RCK-...`;
+- L'Oréal: código CBN `LO...` ou produto `LOR-...`;
+- 3M: código CBN `SB...` ou produto `SCB-...` / `3M-...`.
+
+O EAN não precisa começar por 789 ou 790. Produtos válidos com outros prefixos devem ser aceitos.
+
+## Regras dos modelos
 
 ### Ouro Branco
 
-Status: aguardando o envio da planilha de exemplo.
+Quantidade final = Embalagem × Qtde.
 
-Nesta seção serão registrados:
+Ignorar a seção Trocas Pendentes.
 
-- Como identificar a planilha;
-- Nome e posição das colunas;
-- Estrutura dos produtos e quantidades;
-- Particularidades do arquivo;
-- Regras necessárias para reorganização.
+### Piraquara
 
-### Adega Brasil
+Usar a quantidade direta.
 
-Status: aguardando o envio da planilha de exemplo.
+Ignorar a seção Trocas Pendentes e todas as linhas seguintes.
 
-Nesta seção serão registrados:
+### WG Adega Brasil
 
-- Como identificar a planilha;
-- Nome e posição das colunas;
-- Estrutura dos produtos e quantidades;
-- Particularidades do arquivo;
-- Regras necessárias para reorganização.
+Usar a quantidade direta.
 
-## Padrão de saída
+A embalagem, como `01X25G`, descreve a apresentação e não deve multiplicar a quantidade.
 
-Status: aguardando o envio da planilha-padrão.
+### Dalpar
 
-Regras já informadas:
+Entrada recebida como imagem.
 
-1. A primeira coluna deve se chamar exatamente `EAN`.
-2. Abaixo de `EAN` devem ficar os códigos de barras dos produtos, em sequência.
-3. A segunda coluna deve se chamar exatamente `Quantidade`.
-4. Abaixo de `Quantidade` deve ficar a quantidade correspondente a cada EAN.
-5. As quantidades devem ser apresentadas sem vírgulas ou casas decimais.
+Usar código de barras, descrição, marca e quantidade. A leitura por OCR exige revisão antes da exportação.
 
-As demais colunas, regras de limpeza, ordenação e validação serão definidas após o recebimento da planilha-padrão.
+### Orçamento Flex CBN
 
-## Fluxo planejado
+Entrada em PDF digital.
 
-1. Receber as planilhas de exemplo da Rede Piraquara, Ouro Branco e Adega Brasil.
-2. Analisar e documentar como cada formato pode ser identificado.
-3. Receber a planilha-padrão de saída.
-4. Registrar todas as regras de transformação e validação.
-5. Desenvolver a automação.
-6. Testar a conversão usando exemplos reais.
-7. Comparar, quando necessário, a sugestão de pedido enviada com a planilha devolvida pelo comprador, destacando itens descartados, incluídos e quantidades alteradas.
+Os prefixos RB, LO e SB permitem separar diretamente Reckitt, L'Oréal e 3M. A quantidade é direta.
+
+## Saída Reckitt
+
+A planilha deve conter exatamente:
+
+| EAN | quantidade |
+| --- | --- |
+| Código de barras como texto | Quantidade inteira |
+
+Não incluir descrição, preço, marca ou qualquer coluna adicional.
+
+## Comparação de arquivos
+
+O sistema terá um modo para comparar o orçamento enviado com o pedido devolvido pelo comprador. A comparação será feita por EAN e mostrará:
+
+- mantido;
+- quantidade alterada;
+- descartado;
+- incluído.
+
+## Segurança
+
+O repositório GitHub está público. Arquivos de clientes, base de produtos e dados comerciais não devem ser gravados nele. O código fica no GitHub; os dados privados ficam no Supabase.
 
 ## Situação atual
 
-Estrutura inicial do projeto criada. Aguardando os quatro arquivos de referência:
+Concluído:
 
-- Planilha da Rede Piraquara;
-- Planilha do Ouro Branco;
-- Planilha da Adega Brasil;
-- Planilha-padrão com o resultado desejado.
+- interface inicial;
+- modelos principais;
+- modelo personalizado;
+- importação de Excel/CSV;
+- configuração das colunas;
+- regra de multiplicação do Ouro Branco;
+- exportação EAN/quantidade;
+- mapeamento dos arquivos reais;
+- estrutura do banco Supabase;
+- prompt mestre.
+
+Próximas etapas:
+
+1. Conectar o projeto Supabase à aplicação.
+2. Importar a base de produtos de forma privada.
+3. Implementar autenticação.
+4. Implementar PDF e OCR.
+5. Criar a tela de revisão.
+6. Implementar separação e downloads por indústria.
+7. Implementar comparação de orçamento e pedido.
+8. Publicar a aplicação.
