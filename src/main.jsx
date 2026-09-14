@@ -1,12 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as XLSX from 'xlsx'
+import * as pdfjsLib from 'pdfjs-dist'
+import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
   CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail
 } from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
 
 const BASE_MODELS = [
   { id: 'piraquara', name: 'Rede Piraquara', description: 'Quantidade direta; ignora a seção Trocas Pendentes', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
@@ -43,6 +47,96 @@ const cleanQuantity = value => {
     : text
   const number = Number(normalized)
   return Number.isFinite(number) ? Math.trunc(number) : null
+}
+
+const parsePdfNumber = value => {
+  const normalized = String(value).trim().replace(/\./g, '').replace(',', '.')
+  const number = Number(normalized)
+  return Number.isFinite(number) ? Math.trunc(number) : null
+}
+
+const groupPdfLines = items => {
+  const lines = []
+  for (const item of items.filter(entry => entry.str?.trim())) {
+    const x = item.transform[4]
+    const y = item.transform[5]
+    let line = lines.find(entry => Math.abs(entry.y - y) <= 2.5)
+    if (!line) {
+      line = { y, items: [] }
+      lines.push(line)
+    }
+    line.items.push({ text: item.str.trim(), x })
+  }
+  return lines
+    .sort((a, b) => b.y - a.y)
+    .map(line => ({ ...line, items: line.items.sort((a, b) => a.x - b.x) }))
+}
+
+const readPdfOrder = async file => {
+  const data = new Uint8Array(await file.arrayBuffer())
+  const document = await pdfjsLib.getDocument({ data }).promise
+  const pages = []
+  let fullText = ''
+
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber)
+    const content = await page.getTextContent()
+    const lines = groupPdfLines(content.items)
+    pages.push(lines)
+    fullText += ' ' + lines.map(line => line.items.map(item => item.text).join(' ')).join(' ')
+  }
+
+  const normalizedText = normalize(fullText)
+  let modelId = ''
+  if (normalizedText.includes('hiper erp') || normalizedText.includes('supermercado piraquara')) modelId = 'piraquara'
+  else if (normalizedText.includes('hermes') || normalizedText.includes('sugestao de pedido')) modelId = 'ouro-branco'
+  else if (normalizedText.includes('cbn distribuidora') && normalizedText.includes('orcamento')) modelId = 'flex-cbn'
+
+  if (!modelId) {
+    throw new Error(
+      normalizedText.trim()
+        ? 'Este modelo de PDF ainda não foi reconhecido automaticamente.'
+        : 'Este PDF é uma imagem escaneada e precisa do módulo de OCR, que será a próxima etapa.'
+    )
+  }
+
+  const results = []
+  const seen = new Map()
+  let stopped = false
+
+  for (const lines of pages) {
+    for (const line of lines) {
+      const joined = normalize(line.items.map(item => item.text).join(' '))
+      if (joined.includes('trocas pendentes')) {
+        stopped = true
+        break
+      }
+
+      const eanItem = line.items.find(item => /^\d{8,14}$/.test(item.text))
+      if (!eanItem) continue
+
+      const numericAfter = line.items
+        .filter(item => item.x > eanItem.x + 8 && /^\d+(?:[.,]\d+)?$/.test(item.text))
+        .map(item => parsePdfNumber(item.text))
+        .filter(value => value !== null)
+
+      let quantity = null
+      if (modelId === 'ouro-branco' && numericAfter.length >= 2) {
+        quantity = numericAfter[0] * numericAfter[1]
+      } else if (numericAfter.length) {
+        quantity = numericAfter[0]
+      }
+
+      if (!quantity) continue
+      const ean = cleanEan(eanItem.text)
+      seen.set(ean, (seen.get(ean) || 0) + quantity)
+    }
+    if (stopped) break
+  }
+
+  for (const [EAN, Quantidade] of seen.entries()) results.push({ EAN, Quantidade })
+  if (!results.length) throw new Error('Não encontrei itens válidos neste PDF. O arquivo precisa de revisão.')
+  return { modelId, rows: results }
 }
 
 function LoginScreen() {
@@ -182,11 +276,27 @@ function App({ session }) {
   const readFile = async file => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
-    if (!['xlsx', 'xls', 'csv'].includes(extension)) {
-      setMessage({ type: 'error', text: 'Use um arquivo Excel (.xlsx ou .xls) ou CSV.' })
+    if (!['xlsx', 'xls', 'csv', 'pdf'].includes(extension)) {
+      setMessage({ type: 'error', text: 'Use um arquivo Excel (.xlsx ou .xls), CSV ou PDF.' })
       return
     }
     try {
+      if (extension === 'pdf') {
+        setMessage({ type: 'success', text: 'Lendo e identificando o PDF…' })
+        const { modelId, rows } = await readPdfOrder(file)
+        setSelectedId(modelId)
+        setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
+        setFileName(file.name)
+        setSheetName('Pedido extraído do PDF')
+        setHeaderRow(1)
+        setEanColumn('EAN')
+        setQuantityColumn('Quantidade')
+        setPackageColumn('')
+        setQuantityMode('direct')
+        setMessage({ type: 'success', text: `PDF identificado e carregado: ${rows.length} itens encontrados.` })
+        return
+      }
+
       const data = await file.arrayBuffer()
       const workbook = XLSX.read(data, { type: 'array', cellDates: true })
       const firstSheet = workbook.SheetNames[0]
@@ -195,8 +305,8 @@ function App({ session }) {
       setFileName(file.name)
       setSheetName(firstSheet)
       setMessage({ type: 'success', text: `Arquivo carregado: ${rows.length} linhas encontradas.` })
-    } catch {
-      setMessage({ type: 'error', text: 'Não foi possível ler essa planilha. Verifique se o arquivo não está corrompido.' })
+    } catch (readError) {
+      setMessage({ type: 'error', text: readError.message || 'Não foi possível ler o arquivo. Verifique se ele não está corrompido.' })
     }
   }
 
@@ -338,11 +448,11 @@ function App({ session }) {
               onDrop={event => { event.preventDefault(); setIsDragging(false); readFile(event.dataTransfer.files[0]) }}
               onClick={() => fileRef.current?.click()}
             >
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={event => readFile(event.target.files[0])} hidden />
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={event => readFile(event.target.files[0])} hidden />
               <div className="upload-icon"><UploadCloud size={34} /></div>
               <h2>Envie a planilha do cliente</h2>
               <p>Arraste o arquivo para cá ou clique para escolher</p>
-              <span>Excel .xlsx, .xls ou CSV</span>
+              <span>Excel .xlsx, .xls, CSV ou PDF</span>
               <button>Selecionar arquivo</button>
             </div>
           ) : (
