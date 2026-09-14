@@ -100,6 +100,9 @@ Concluído:
 - modelos Piraquara, Ouro Branco, WG Adega Brasil, Dalpar e Flex CBN;
 - modelo personalizado editável;
 - importação de Excel e CSV;
+- leitura inicial de PDFs digitais;
+- identificação automática dos modelos Piraquara, Ouro Branco e Flex CBN;
+- bloqueio automático da seção “Trocas Pendentes” na leitura de PDF;
 - configuração das colunas;
 - regra de multiplicação do Ouro Branco;
 - exportação com as colunas EAN e Quantidade;
@@ -126,8 +129,8 @@ Situação em teste:
 
 Próximas etapas:
 
-1. Testar a conversão com uma planilha real de cada cliente.
-2. Implementar a leitura dos PDFs digitais de Piraquara, Ouro Branco e Flex CBN.
+1. Testar a leitura dos PDFs digitais de Piraquara, Ouro Branco e Flex CBN.
+2. Corrigir as regras específicas identificadas nos testes.
 3. Implementar OCR para Adega Brasil e Dalpar.
 4. Criar a tela de revisão dos itens identificados.
 5. Implementar separação e downloads por indústria.
