@@ -132,3 +132,31 @@ Próximas etapas:
 6. Criar a tela de revisão dos itens identificados.
 7. Implementar separação e downloads por indústria.
 8. Implementar comparação entre orçamento enviado e pedido recebido.
+9. Depois que o conversor e os testes estiverem estáveis, iniciar a automação da digitação do pedido no portal/sistema da CBN.
+
+## Próxima fase: automação da digitação no portal CBN
+
+Depois de concluir o conversor, os testes com clientes reais, a revisão dos itens e a separação por indústria, a próxima fase do projeto será automatizar também a digitação do pedido no portal/sistema da CBN.
+
+Fluxo desejado:
+
+1. O conversor prepara o pedido final, já validado, com códigos/EANs e quantidades corretas.
+2. Um agente de navegador ou automação abre o portal da CBN.
+3. Faz login com a conta autorizada do usuário.
+4. Navega até a tela de novo pedido.
+5. Seleciona o cliente correto.
+6. Digita os itens e quantidades automaticamente.
+7. Sinaliza códigos não encontrados, divergências ou mensagens de erro para revisão.
+8. Para antes da confirmação final, faturamento ou envio definitivo.
+9. O usuário faz a conferência final e autoriza manualmente a conclusão do pedido.
+
+Prioridade de implementação:
+
+- Primeiro avaliar uso do ChatGPT Work/Cloud Browser para ensinar e repetir o fluxo de navegação no portal.
+- Se o fluxo for estável e recorrente, avaliar automação própria com Playwright, Selenium ou ferramenta RPA.
+- Antes de automatizar cliques, verificar se o sistema da CBN oferece API ou integração oficial para lançamento de pedidos, pois isso seria mais confiável do que automação visual.
+- Manter aprovação humana obrigatória antes de faturar/enviar enquanto a automação estiver em validação.
+
+Objetivo final desta fase:
+
+Pedido recebido → conversor organiza e valida → automação digita no portal CBN → usuário confere → usuário autoriza o faturamento/envio.
