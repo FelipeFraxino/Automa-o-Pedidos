@@ -57,7 +57,7 @@ function LoginScreen() {
     setError('')
     const { error: authError } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin, shouldCreateUser: true },
+      options: { emailRedirectTo: 'https://felipefraxino.github.io/Automa-o-Pedidos/', shouldCreateUser: true },
     })
     setSending(false)
     if (authError) {
