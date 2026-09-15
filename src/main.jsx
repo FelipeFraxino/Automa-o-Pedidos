@@ -20,6 +20,7 @@ const BASE_MODELS = [
   { id: 'dalpar', name: 'Dalpar', description: 'Pedido recebido como imagem; separação por marca e produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
   { id: 'flex-cbn', name: 'Orçamento Flex CBN', description: 'Prefixos RB, LO e SB identificam a indústria', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
   { id: 'personalizado', name: 'Modelo variável', description: 'Leitura completa para Excel, PDF, foto ou print, com revisão antes da exportação', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
+  { id: 'confronto', name: 'Confronto de arquivos', description: 'Compare o orçamento enviado com o pedido recebido', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
 ]
 
 const normalize = value => String(value ?? '').trim().toLowerCase()
@@ -351,6 +352,62 @@ const recognizeScannedPdf = async file => {
   return text
 }
 
+const parseSpreadsheetOrder = async file => {
+  const data = await file.arrayBuffer()
+  const workbook = XLSX.read(data, { type: 'array', cellDates: true })
+  const firstSheet = workbook.SheetNames[0]
+  const rawRows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, defval: '', raw: false })
+
+  let bestHeader = -1
+  let bestScore = -1
+  for (let rowIndex = 0; rowIndex < Math.min(rawRows.length, 30); rowIndex += 1) {
+    const headers = rawRows[rowIndex].map(normalize)
+    let score = 0
+    if (headers.some(value => /ean|cod.*barra|cód.*barra|gtin/.test(value))) score += 5
+    if (headers.some(value => /quant|qtd|qtde/.test(value))) score += 4
+    if (headers.some(value => /descr|item|produto/.test(value))) score += 2
+    if (headers.some(value => /total|valor pedido|vl pedido/.test(value))) score += 2
+    if (score > bestScore) {
+      bestScore = score
+      bestHeader = rowIndex
+    }
+  }
+
+  if (bestHeader < 0 || bestScore < 7) throw new Error('Não encontrei as colunas de EAN e quantidade neste arquivo.')
+  const headers = rawRows[bestHeader].map(value => String(value || '').trim())
+  const eanIndex = headers.findIndex(value => /ean|cod.*barra|cód.*barra|gtin/.test(normalize(value)))
+  const quantityIndex = headers.findIndex(value => /quant|qtd|qtde/.test(normalize(value)))
+  const itemIndex = headers.findIndex(value => /descr|item|produto/.test(normalize(value)))
+  const packageIndex = headers.findIndex(value => /^emb|embalagem/.test(normalize(value)))
+  const totalIndex = headers.findIndex(value => /(^|\s)(vl\.?\s*)?total|valor pedido/.test(normalize(value)))
+  const unitIndex = headers.findIndex(value => /unit|vlr\.?$|valor$|preco|preço/.test(normalize(value)))
+  const shouldMultiply = packageIndex >= 0 && quantityIndex >= 0 &&
+    headers.some(value => /sugestao|sugestão/.test(normalize(value))) ||
+    (packageIndex >= 0 && normalize(headers[quantityIndex]).includes('qtde'))
+
+  const rows = []
+  for (const row of rawRows.slice(bestHeader + 1)) {
+    const EAN = cleanEan(row[eanIndex])
+    if (!/^\d{8,14}$/.test(EAN)) continue
+    const ordered = cleanQuantity(row[quantityIndex])
+    const pack = shouldMultiply ? cleanQuantity(row[packageIndex]) : 1
+    const Quantidade = ordered !== null && pack !== null ? ordered * pack : null
+    if (!Quantidade) continue
+    const ValorUnitario = unitIndex >= 0 ? parsePdfMoney(row[unitIndex]) : 0
+    const ValorTotal = totalIndex >= 0 ? parsePdfMoney(row[totalIndex]) : ValorUnitario * Quantidade
+    rows.push({
+      EAN,
+      Item: itemIndex >= 0 ? String(row[itemIndex] || '').trim() || 'Item sem descrição' : 'Item sem descrição',
+      Quantidade,
+      ValorUnitario,
+      ValorTotal,
+    })
+  }
+
+  if (!rows.length) throw new Error('O arquivo foi aberto, mas nenhum item válido foi encontrado.')
+  return rows
+}
+
 function LoginScreen() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -472,6 +529,13 @@ function App({ session }) {
   const [confirmPassword, setConfirmPassword] = useState('')
   const [passwordMessage, setPasswordMessage] = useState(null)
   const [savingPassword, setSavingPassword] = useState(false)
+  const [budgetFileName, setBudgetFileName] = useState('')
+  const [orderFileName, setOrderFileName] = useState('')
+  const [budgetRows, setBudgetRows] = useState([])
+  const [comparisonOrderRows, setComparisonOrderRows] = useState([])
+  const [comparisonLoading, setComparisonLoading] = useState('')
+  const budgetFileRef = useRef(null)
+  const orderFileRef = useRef(null)
 
   const selected = models.find(model => model.id === selectedId) || models[0]
   const headers = workbookRows[Math.max(0, headerRow - 1)]?.map((value, index) => String(value || `Coluna ${index + 1}`).trim()) || []
@@ -507,6 +571,56 @@ function App({ session }) {
   }, [orderDetails, catalogIndustries])
 
   const completeItems = useMemo(() => detailedPreview, [detailedPreview])
+
+  const comparisonResult = useMemo(() => {
+    const budgetByEan = new Map()
+    for (const item of budgetRows) {
+      const current = budgetByEan.get(item.EAN)
+      if (current) {
+        current.Quantidade += item.Quantidade
+        current.ValorTotal += item.ValorTotal || 0
+        if (!current.Item && item.Item) current.Item = item.Item
+      } else {
+        budgetByEan.set(item.EAN, { ...item })
+      }
+    }
+
+    const orderByEan = new Map()
+    for (const item of comparisonOrderRows) {
+      const budget = budgetByEan.get(item.EAN)
+      const budgetUnit = budget?.ValorUnitario || (budget?.Quantidade ? (budget.ValorTotal || 0) / budget.Quantidade : 0)
+      const value = item.ValorTotal || budgetUnit * item.Quantidade
+      const industry = catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item || budget?.Item)
+      const normalizedItem = {
+        ...item,
+        Item: item.Item && item.Item !== 'Item sem descrição' ? item.Item : budget?.Item || 'Item sem descrição',
+        ValorUnitario: item.ValorUnitario || budgetUnit,
+        ValorTotal: value,
+        Industria: industry,
+      }
+      const current = orderByEan.get(item.EAN)
+      if (current) {
+        current.Quantidade += normalizedItem.Quantidade
+        current.ValorTotal += normalizedItem.ValorTotal
+      } else {
+        orderByEan.set(item.EAN, normalizedItem)
+      }
+    }
+
+    const industryOrder = { RECKITT: 0, LOREAL: 1, '3M': 2, NAO_IDENTIFICADA: 3 }
+    const pedido = [...orderByEan.values()].sort((a, b) =>
+      (industryOrder[a.Industria] ?? 3) - (industryOrder[b.Industria] ?? 3)
+    )
+    const excluidos = [...budgetByEan.values()]
+      .filter(item => !orderByEan.has(item.EAN))
+      .map(item => ({
+        ...item,
+        Industria: catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item),
+      }))
+      .sort((a, b) => (industryOrder[a.Industria] ?? 3) - (industryOrder[b.Industria] ?? 3))
+
+    return { pedido, excluidos }
+  }, [budgetRows, comparisonOrderRows, catalogIndustries])
 
   useEffect(() => {
     let active = true
@@ -807,6 +921,129 @@ function App({ session }) {
     setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens e resumo de valores.` })
   }
 
+  const readComparisonFile = async (file, kind) => {
+    if (!file) return
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    if (!['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
+      setMessage({ type: 'error', text: 'Use Excel, CSV, PDF, PNG, JPG ou WEBP.' })
+      return
+    }
+
+    setComparisonLoading(kind)
+    setMessage({ type: 'success', text: `Lendo o ${kind === 'budget' ? 'orçamento' : 'pedido'}…` })
+    try {
+      let rows
+      if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
+        rows = parseVariableText(await recognizeImage(file))
+      } else if (extension === 'pdf') {
+        try {
+          rows = (await readPdfOrder(file)).rows
+        } catch {
+          rows = parseVariableText(await recognizeScannedPdf(file))
+        }
+      } else {
+        rows = await parseSpreadsheetOrder(file)
+      }
+
+      if (!rows?.length) throw new Error('Nenhum item foi reconhecido neste arquivo.')
+      await registerNewCatalogItems(rows)
+      if (kind === 'budget') {
+        setBudgetRows(rows)
+        setBudgetFileName(file.name)
+      } else {
+        setComparisonOrderRows(rows)
+        setOrderFileName(file.name)
+      }
+      setMessage({ type: 'success', text: `${kind === 'budget' ? 'Orçamento' : 'Pedido'} carregado com ${rows.length} itens.` })
+    } catch (error) {
+      setMessage({ type: 'error', text: error.message || 'Não foi possível ler o arquivo.' })
+    } finally {
+      setComparisonLoading('')
+    }
+  }
+
+  const resetComparison = kind => {
+    if (kind === 'budget') {
+      setBudgetRows([])
+      setBudgetFileName('')
+      if (budgetFileRef.current) budgetFileRef.current.value = ''
+    } else {
+      setComparisonOrderRows([])
+      setOrderFileName('')
+      if (orderFileRef.current) orderFileRef.current.value = ''
+    }
+    setMessage(null)
+  }
+
+  const exportComparison = () => {
+    const { pedido, excluidos } = comparisonResult
+    if (!pedido.length || !budgetRows.length) {
+      setMessage({ type: 'error', text: 'Carregue o orçamento e o pedido antes de gerar o confronto.' })
+      return
+    }
+
+    const groups = [
+      { code: 'RECKITT', label: 'RECKITT' },
+      { code: 'LOREAL', label: "L'ORÉAL" },
+      { code: '3M', label: '3M' },
+      { code: 'NAO_IDENTIFICADA', label: 'ITENS NOVOS / A REVISAR' },
+    ]
+    const sheetRows = [['EAN', 'Item', 'Quantidade', 'Valor total do item', 'Indústria']]
+    const sectionRows = []
+
+    for (const group of groups) {
+      if (sheetRows.length > 1) sheetRows.push(['', '', '', '', ''])
+      sectionRows.push(sheetRows.length)
+      sheetRows.push([group.label, '', '', '', ''])
+      for (const item of pedido.filter(product => product.Industria === group.code)) {
+        sheetRows.push([item.EAN, item.Item, item.Quantidade, item.ValorTotal, group.label])
+      }
+    }
+
+    sheetRows.push(['', '', '', '', ''])
+    sectionRows.push(sheetRows.length)
+    sheetRows.push(['ITENS EXCLUÍDOS DO PEDIDO', '', '', '', ''])
+    sheetRows.push(['EAN', 'Item', 'Quantidade no orçamento', 'Valor no orçamento', 'Indústria'])
+    for (const item of excluidos) {
+      const industryLabel = item.Industria === 'LOREAL' ? "L'ORÉAL" : item.Industria === 'NAO_IDENTIFICADA' ? 'A REVISAR' : item.Industria
+      sheetRows.push([item.EAN, item.Item, item.Quantidade, item.ValorTotal || 0, industryLabel])
+    }
+    if (!excluidos.length) sheetRows.push(['Nenhum item excluído', '', '', '', ''])
+
+    const sheet = XLSX.utils.aoa_to_sheet(sheetRows)
+    sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 23 }, { wch: 22 }, { wch: 18 }, { wch: 18 }]
+    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 4 } }))
+    for (let row = 1; row < sheetRows.length; row += 1) {
+      const cell = `D${row + 1}`
+      if (typeof sheetRows[row][3] === 'number' && sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+    }
+
+    const totals = {
+      RECKITT: pedido.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
+      LOREAL: pedido.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + item.ValorTotal, 0),
+      '3M': pedido.filter(item => item.Industria === '3M').reduce((sum, item) => sum + item.ValorTotal, 0),
+      A_REVISAR: pedido.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + item.ValorTotal, 0),
+    }
+    const grandTotal = pedido.reduce((sum, item) => sum + item.ValorTotal, 0)
+    XLSX.utils.sheet_add_aoa(sheet, [
+      ['RESUMO DO PEDIDO', 'Valor'],
+      ['Reckitt', totals.RECKITT],
+      ["L'Oréal", totals.LOREAL],
+      ['3M', totals['3M']],
+      ['Itens novos / a revisar', totals.A_REVISAR],
+      ['TOTAL DO PEDIDO', grandTotal],
+    ], { origin: 'F1' })
+    for (const cell of ['G2', 'G3', 'G4', 'G5', 'G6']) {
+      if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+    }
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Confronto')
+    const baseName = orderFileName.replace(/\.[^.]+$/, '') || 'pedido'
+    XLSX.writeFile(workbook, `${baseName}_confronto.xlsx`)
+    setMessage({ type: 'success', text: `Confronto gerado: ${pedido.length} itens no pedido e ${excluidos.length} itens excluídos.` })
+  }
+
   const savePassword = async event => {
     event.preventDefault()
     setPasswordMessage(null)
@@ -897,6 +1134,78 @@ function App({ session }) {
             </div>
           )}
 
+          {selectedId === 'confronto' ? (
+            <>
+              <div className="comparison-intro">
+                <h2>Confronto de arquivos</h2>
+                <p>Envie primeiro o orçamento original e depois o pedido devolvido pelo cliente. Aceita Excel, CSV, PDF, foto ou print.</p>
+              </div>
+              <div className="comparison-upload-grid">
+                <div className={`comparison-upload ${budgetRows.length ? 'loaded' : ''}`}>
+                  <span className="comparison-step">1</span>
+                  <FileSpreadsheet size={28} />
+                  <h3>Orçamento</h3>
+                  <p>{budgetFileName || 'Arquivo que foi enviado ao cliente'}</p>
+                  <input ref={budgetFileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={event => readComparisonFile(event.target.files[0], 'budget')} />
+                  <button className="ghost-button" onClick={() => budgetFileRef.current?.click()} disabled={comparisonLoading === 'budget'}>
+                    <UploadCloud size={17} /> {comparisonLoading === 'budget' ? 'Lendo…' : budgetRows.length ? 'Trocar orçamento' : 'Selecionar orçamento'}
+                  </button>
+                  {budgetRows.length > 0 && <button className="comparison-remove" onClick={() => resetComparison('budget')}>Remover</button>}
+                  {budgetRows.length > 0 && <strong>{budgetRows.length} itens lidos</strong>}
+                </div>
+                <div className={`comparison-upload ${comparisonOrderRows.length ? 'loaded' : ''}`}>
+                  <span className="comparison-step">2</span>
+                  <FileSpreadsheet size={28} />
+                  <h3>Pedido</h3>
+                  <p>{orderFileName || 'Arquivo devolvido pelo cliente'}</p>
+                  <input ref={orderFileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={event => readComparisonFile(event.target.files[0], 'order')} />
+                  <button className="ghost-button" onClick={() => orderFileRef.current?.click()} disabled={comparisonLoading === 'order'}>
+                    <UploadCloud size={17} /> {comparisonLoading === 'order' ? 'Lendo…' : comparisonOrderRows.length ? 'Trocar pedido' : 'Selecionar pedido'}
+                  </button>
+                  {comparisonOrderRows.length > 0 && <button className="comparison-remove" onClick={() => resetComparison('order')}>Remover</button>}
+                  {comparisonOrderRows.length > 0 && <strong>{comparisonOrderRows.length} itens lidos</strong>}
+                </div>
+              </div>
+
+              {budgetRows.length > 0 && comparisonOrderRows.length > 0 && (
+                <>
+                  <div className="preview-card">
+                    <div className="section-heading">
+                      <div><span>3</span><div><h2>Prévia do confronto</h2><p>Pedido organizado por indústria e itens retirados pelo cliente.</p></div></div>
+                      <b>{comparisonResult.pedido.length} itens no pedido</b>
+                    </div>
+                    <div className="comparison-summary">
+                      {['RECKITT', 'LOREAL', '3M', 'NAO_IDENTIFICADA'].map(industry => {
+                        const rows = comparisonResult.pedido.filter(item => item.Industria === industry)
+                        const value = rows.reduce((sum, item) => sum + item.ValorTotal, 0)
+                        const label = industry === 'LOREAL' ? "L'Oréal" : industry === 'NAO_IDENTIFICADA' ? 'A revisar' : industry
+                        return <div key={industry}><span>{label}</span><strong>{value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong><small>{rows.length} itens</small></div>
+                      })}
+                      <div className="comparison-total"><span>Total do pedido</span><strong>{comparisonResult.pedido.reduce((sum, item) => sum + item.ValorTotal, 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong><small>{comparisonResult.pedido.length} itens</small></div>
+                    </div>
+                    <div className="comparison-excluded">
+                      <h3>Itens excluídos do pedido <span>{comparisonResult.excluidos.length}</span></h3>
+                      <div className="table-wrap">
+                        <table>
+                          <thead><tr><th>EAN</th><th>Item</th><th>Quantidade no orçamento</th><th>Valor</th><th>Indústria</th></tr></thead>
+                          <tbody>
+                            {comparisonResult.excluidos.slice(0, 12).map((row, index) => (
+                              <tr key={index}><td>{row.EAN}</td><td>{row.Item}</td><td>{row.Quantidade}</td><td>{(row.ValorTotal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td><td>{row.Industria === 'LOREAL' ? "L'Oréal" : row.Industria === 'NAO_IDENTIFICADA' ? 'A revisar' : row.Industria}</td></tr>
+                            ))}
+                            {!comparisonResult.excluidos.length && <tr><td className="empty" colSpan="5">Nenhum item foi excluído do pedido.</td></tr>}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="action-bar">
+                    <div><strong>Planilha do confronto pronta</strong><span>Pedido completo por indústria, totais e itens excluídos.</span></div>
+                    <button className="primary-button" onClick={exportComparison}><Download size={19} /> Baixar confronto</button>
+                  </div>
+                </>
+              )}
+            </>
+          ) : (
           {!workbookRows.length ? (
             <div
               className={`dropzone ${isDragging ? 'dragging' : ''}`}
@@ -1027,7 +1336,8 @@ function App({ session }) {
               </div>
             </>
           )}
-        </section>
+
+          )}        </section>
       </main>
       {showPasswordSetup && (
         <div className="modal-backdrop">
