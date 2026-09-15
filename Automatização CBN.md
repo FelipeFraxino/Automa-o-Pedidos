@@ -241,3 +241,15 @@ Na planilha de pedido completo:
 - qualquer diferença entre a soma das linhas e o “Vl Total” é exibida como “Ajuste conforme total impresso no documento”;
 - o total não pode ser reduzido silenciosamente quando uma linha possui formatação numérica diferente;
 - no pedido 82226070807284, o valor final de referência é R$ 15.424,11.
+
+
+## Planilha CBN com pedido em unidades
+
+No Confronto de arquivos, planilhas com os cabeçalhos abaixo devem ser reconhecidas automaticamente:
+
+- EAN: código de barras;
+- PRODUTO: descrição;
+- PEDIDO EM UND: quantidade pedida;
+- CBN: preço unitário.
+
+O valor total de cada item é calculado por PEDIDO EM UND × CBN. O arquivo real CBN (6).xlsx possui 32 itens válidos, 1.012 unidades e valor calculado de R$ 11.002,82.
