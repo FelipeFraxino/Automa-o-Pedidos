@@ -1206,6 +1206,7 @@ function App({ session }) {
               )}
             </>
           ) : (
+            <>
           {!workbookRows.length ? (
             <div
               className={`dropzone ${isDragging ? 'dragging' : ''}`}
@@ -1336,8 +1337,9 @@ function App({ session }) {
               </div>
             </>
           )}
-
-          )}        </section>
+            </>
+          )}
+        </section>
       </main>
       {showPasswordSetup && (
         <div className="modal-backdrop">
