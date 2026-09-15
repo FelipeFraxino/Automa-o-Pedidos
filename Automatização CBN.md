@@ -229,3 +229,15 @@ O módulo deverá:
 - acompanhar a cobertura do mix por loja;
 - apresentar percentual realizado, pendências e evolução da meta;
 - permitir filtros por loja, produto, EAN e período.
+
+## Validação dos totais do Flex CBN
+
+O leitor deve aceitar valores com separadores de milhar e decimal usados pelo PDF do Flex, incluindo exemplos como `2,366.3`.
+
+Na planilha de pedido completo:
+
+- todos os valores de itens reconhecidos entram nos subtotais das indústrias;
+- o campo “Vl Total” impresso no PDF é usado como controle do total geral;
+- qualquer diferença entre a soma das linhas e o “Vl Total” é exibida como “Ajuste conforme total impresso no documento”;
+- o total não pode ser reduzido silenciosamente quando uma linha possui formatação numérica diferente;
+- no pedido 82226070807284, o valor final de referência é R$ 15.424,11.
