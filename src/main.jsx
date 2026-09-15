@@ -232,13 +232,13 @@ const recognizeImage = async source => {
 
 const recognizeScannedPdf = async file => {
   const data = new Uint8Array(await file.arrayBuffer())
-  const document = await pdfjsLib.getDocument({ data }).promise
+  const pdfDocument = await pdfjsLib.getDocument({ data }).promise
   let text = ''
 
-  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
-    const page = await document.getPage(pageNumber)
+  for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber += 1) {
+    const page = await pdfDocument.getPage(pageNumber)
     const viewport = page.getViewport({ scale: 2 })
-    const canvas = document.createElement('canvas')
+    const canvas = window.document.createElement('canvas')
     canvas.width = viewport.width
     canvas.height = viewport.height
     const context = canvas.getContext('2d')
