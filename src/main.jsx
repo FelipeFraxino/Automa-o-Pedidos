@@ -286,7 +286,11 @@ const parseAdegaText = (text, catalog = {}) => {
 
 const parseVariableText = (text, catalog = {}) => {
   const normalizedDocument = normalize(text)
-  if (normalizedDocument.includes('adega brasil') || normalizedDocument.includes('pedido emitido na unid')) {
+  const hasAdegaLayout = normalizedDocument.includes('adega brasil') ||
+    normalizedDocument.includes('adeg a brasil') ||
+    normalizedDocument.includes('pedido emitido na unid') ||
+    /[_-]?0?\d{1,2}X\d+[A-Z0-9]*/i.test(text)
+  if (hasAdegaLayout) {
     const adegaRows = parseAdegaText(text, catalog)
     if (adegaRows.length) return adegaRows
   }
@@ -373,7 +377,7 @@ const prepareImageForOcr = async (source, rotation = 0) => {
     for (let y = 0; y < canvas.height; y += 1) {
       for (let x = 0; x < canvas.width; x += 1) {
         const index = (y * canvas.width + x) * 4
-        if (pixels[index] < 175) {
+        if (pixels[index] < 60) {
           rowDark[y] += 1
           columnDark[x] += 1
         }
