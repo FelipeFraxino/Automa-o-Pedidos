@@ -282,9 +282,15 @@ function App({ session }) {
       }
 
       if (active) {
-        setCatalogIndustries(Object.fromEntries(
-          records.filter(item => item.ean).map(item => [cleanEan(item.ean), item.industria])
-        ))
+        const industryMap = {}
+        for (const item of records.filter(record => record.ean)) {
+          const catalogEan = cleanEan(item.ean)
+          industryMap[catalogEan] = item.industria
+          // Alguns PDFs completam o UPC de 12 dígitos com um zero à esquerda.
+          // O alias serve apenas para classificar; o EAN exportado não é alterado.
+          if (catalogEan.length === 12) industryMap[`0${catalogEan}`] = item.industria
+        }
+        setCatalogIndustries(industryMap)
       }
     }
 
