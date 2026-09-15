@@ -354,6 +354,23 @@ const recognizeScannedPdf = async file => {
   return text
 }
 
+const mergeItemsByEan = rows => {
+  const merged = new Map()
+  for (const item of rows) {
+    if (!item?.EAN) continue
+    const current = merged.get(item.EAN)
+    if (current) {
+      current.Quantidade += item.Quantidade || 0
+      current.ValorTotal += item.ValorTotal || 0
+      if ((!current.Item || current.Item === 'Item sem descrição' || current.Item === 'Item para revisar') && item.Item) current.Item = item.Item
+      if (!current.ValorUnitario && item.ValorUnitario) current.ValorUnitario = item.ValorUnitario
+    } else {
+      merged.set(item.EAN, { ...item })
+    }
+  }
+  return [...merged.values()]
+}
+
 const parseSpreadsheetOrder = async file => {
   const data = await file.arrayBuffer()
   const workbook = XLSX.read(data, { type: 'array', cellDates: true })
@@ -550,7 +567,7 @@ function App({ session }) {
     const quantityIndex = headers.indexOf(quantityColumn)
     const packageIndex = headers.indexOf(packageColumn)
     if (eanIndex < 0 || quantityIndex < 0) return []
-    return workbookRows
+    const validRows = workbookRows
       .slice(headerRow)
       .map(row => {
         const EAN = cleanEan(row[eanIndex])
@@ -565,6 +582,7 @@ function App({ session }) {
         item.Quantidade !== 0 &&
         (outputIndustry === 'TODAS' || item.Industria === outputIndustry)
       )
+    return mergeItemsByEan(validRows)
   }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, outputIndustry, catalogIndustries, headers.join('|')])
 
   const detailedPreview = useMemo(() => {
@@ -741,7 +759,9 @@ function App({ session }) {
     }
   }
 
-  const readFile = async file => {
+  const addFileName = (previous, name, append) => append && previous ? `${previous}, ${name}` : name
+
+  const readFile = async (file, append = false) => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
     if (!['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
@@ -750,29 +770,30 @@ function App({ session }) {
     }
     try {
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
-        setMessage({ type: 'success', text: 'Lendo a imagem por OCR. Isso pode levar alguns minutos…' })
-        const text = await recognizeImage(file)
-        const rows = parseVariableText(text)
+        setMessage({ type: 'success', text: `Lendo ${file.name} por OCR. Isso pode levar alguns minutos…` })
+        const rows = parseVariableText(await recognizeImage(file))
         if (!rows.length) throw new Error('A imagem foi lida, mas o formato da tabela ainda não foi reconhecido. O problema está no leitor, não na qualidade da foto.')
         await registerNewCatalogItems(rows)
         const imageModelId = selectedId === 'dalpar' ? 'dalpar' : 'personalizado'
-        setSelectedId(imageModelId)
-        setSourceOrderTotal(0)
-        setOrderDetails(rows)
-        setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
-        setFileName(file.name)
-        setSheetName(imageModelId === 'dalpar' ? 'Pedido Dalpar lido por OCR — revisar' : 'Imagem lida por OCR — revisar')
+        if (!append) setSelectedId(imageModelId)
+        setSourceOrderTotal(previous => append ? previous : 0)
+        setOrderDetails(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
+        setWorkbookRows(previous => {
+          const added = rows.map(row => [row.EAN, row.Quantidade])
+          return append && previous.length ? [previous[0], ...previous.slice(1), ...added] : [['EAN', 'Quantidade'], ...added]
+        })
+        setFileName(previous => addFileName(previous, file.name, append))
+        setSheetName(imageModelId === 'dalpar' ? 'Pedido Dalpar lido por OCR — revisar' : 'Imagens lidas por OCR — revisar')
         setHeaderRow(1)
         setEanColumn('EAN')
         setQuantityColumn('Quantidade')
         setPackageColumn('')
         setQuantityMode('direct')
-        setMessage({ type: 'success', text: `Imagem lida: ${rows.length} itens. Confira a prévia antes de baixar.` })
-        return
+        return rows.length
       }
 
       if (extension === 'pdf') {
-        setMessage({ type: 'success', text: 'Lendo e identificando o PDF…' })
+        setMessage({ type: 'success', text: `Lendo e identificando ${file.name}…` })
         let modelId
         let rows
         let documentTotal = 0
@@ -782,26 +803,27 @@ function App({ session }) {
           rows = parsed.rows
           documentTotal = parsed.documentTotal || 0
         } catch (pdfError) {
-          setMessage({ type: 'success', text: 'PDF escaneado detectado. Iniciando OCR…' })
-          const text = await recognizeScannedPdf(file)
-          rows = parseVariableText(text)
+          setMessage({ type: 'success', text: `PDF escaneado detectado em ${file.name}. Iniciando OCR…` })
+          rows = parseVariableText(await recognizeScannedPdf(file))
           modelId = 'personalizado'
           if (!rows.length) throw pdfError
         }
         await registerNewCatalogItems(rows)
-        setSelectedId(modelId)
-        setSourceOrderTotal(documentTotal)
-        setOrderDetails(rows)
-        setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
-        setFileName(file.name)
-        setSheetName('Pedido extraído do PDF')
+        if (!append) setSelectedId(modelId)
+        setSourceOrderTotal(previous => append ? previous + documentTotal : documentTotal)
+        setOrderDetails(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
+        setWorkbookRows(previous => {
+          const added = rows.map(row => [row.EAN, row.Quantidade])
+          return append && previous.length ? [previous[0], ...previous.slice(1), ...added] : [['EAN', 'Quantidade'], ...added]
+        })
+        setFileName(previous => addFileName(previous, file.name, append))
+        setSheetName('Pedidos extraídos de PDF')
         setHeaderRow(1)
         setEanColumn('EAN')
         setQuantityColumn('Quantidade')
         setPackageColumn('')
         setQuantityMode('direct')
-        setMessage({ type: 'success', text: `PDF identificado e carregado: ${rows.length} itens encontrados.` })
-        return
+        return rows.length
       }
 
       const data = await file.arrayBuffer()
@@ -809,14 +831,26 @@ function App({ session }) {
       const firstSheet = workbook.SheetNames[0]
       const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, defval: '', raw: false })
       setOrderDetails([])
-      setSourceOrderTotal(0)
-      setWorkbookRows(rows)
-      setFileName(file.name)
-      setSheetName(firstSheet)
-      setMessage({ type: 'success', text: `Arquivo carregado: ${rows.length} linhas encontradas.` })
+      setSourceOrderTotal(previous => append ? previous : 0)
+      setWorkbookRows(previous => append && previous.length ? [previous[0], ...previous.slice(1), ...rows.slice(1)] : rows)
+      setFileName(previous => addFileName(previous, file.name, append))
+      setSheetName(append ? 'Arquivos combinados' : firstSheet)
+      return Math.max(0, rows.length - 1)
     } catch (readError) {
-      setMessage({ type: 'error', text: readError.message || 'Não foi possível ler o arquivo. Verifique se ele não está corrompido.' })
+      setMessage({ type: 'error', text: `${file.name}: ${readError.message || 'não foi possível ler o arquivo.'}` })
+      return 0
     }
+  }
+
+  const readFiles = async (fileList, appendExisting = false) => {
+    const files = [...(fileList || [])]
+    if (!files.length) return
+    let totalRead = 0
+    for (let index = 0; index < files.length; index += 1) {
+      totalRead += await readFile(files[index], appendExisting || index > 0)
+    }
+    if (fileRef.current) fileRef.current.value = ''
+    setMessage({ type: 'success', text: `${files.length} arquivo(s) processado(s). ${totalRead} linhas ou itens adicionados ao pedido.` })
   }
 
   const saveCurrentModel = async () => {
@@ -952,16 +986,16 @@ function App({ session }) {
     setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens e resumo de valores.` })
   }
 
-  const readComparisonFile = async (file, kind) => {
-    if (!file) return
+  const readComparisonFile = async (file, kind, append = true) => {
+    if (!file) return 0
     const extension = file.name.split('.').pop()?.toLowerCase()
     if (!['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
       setMessage({ type: 'error', text: 'Use Excel, CSV, PDF, PNG, JPG ou WEBP.' })
-      return
+      return 0
     }
 
     setComparisonLoading(kind)
-    setMessage({ type: 'success', text: `Lendo o ${kind === 'budget' ? 'orçamento' : 'pedido'}…` })
+    setMessage({ type: 'success', text: `Lendo ${file.name}…` })
     try {
       let rows
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
@@ -979,18 +1013,29 @@ function App({ session }) {
       if (!rows?.length) throw new Error('Nenhum item foi reconhecido neste arquivo.')
       await registerNewCatalogItems(rows)
       if (kind === 'budget') {
-        setBudgetRows(rows)
-        setBudgetFileName(file.name)
+        setBudgetRows(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
+        setBudgetFileName(previous => addFileName(previous, file.name, append))
       } else {
-        setComparisonOrderRows(rows)
-        setOrderFileName(file.name)
+        setComparisonOrderRows(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
+        setOrderFileName(previous => addFileName(previous, file.name, append))
       }
-      setMessage({ type: 'success', text: `${kind === 'budget' ? 'Orçamento' : 'Pedido'} carregado com ${rows.length} itens.` })
+      return rows.length
     } catch (error) {
-      setMessage({ type: 'error', text: error.message || 'Não foi possível ler o arquivo.' })
+      setMessage({ type: 'error', text: `${file.name}: ${error.message || 'não foi possível ler o arquivo.'}` })
+      return 0
     } finally {
       setComparisonLoading('')
     }
+  }
+
+  const readComparisonFiles = async (fileList, kind) => {
+    const files = [...(fileList || [])]
+    if (!files.length) return
+    let totalRead = 0
+    for (const file of files) totalRead += await readComparisonFile(file, kind, true)
+    const input = kind === 'budget' ? budgetFileRef.current : orderFileRef.current
+    if (input) input.value = ''
+    setMessage({ type: 'success', text: `${files.length} arquivo(s) adicionados ao ${kind === 'budget' ? 'orçamento' : 'pedido'}, com ${totalRead} itens lidos.` })
   }
 
   const resetComparison = kind => {
@@ -1187,10 +1232,10 @@ function App({ session }) {
                   <span className="comparison-step">1</span>
                   <FileSpreadsheet size={28} />
                   <h3>Orçamento</h3>
-                  <p>{budgetFileName || 'Arquivo que foi enviado ao cliente'}</p>
-                  <input ref={budgetFileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={event => readComparisonFile(event.target.files[0], 'budget')} />
+                  <p className="uploaded-file-names">{budgetFileName || 'Arquivo(s) que foram enviados ao cliente'}</p>
+                  <input ref={budgetFileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={event => readComparisonFiles(event.target.files, 'budget')} />
                   <button className="ghost-button" onClick={() => budgetFileRef.current?.click()} disabled={comparisonLoading === 'budget'}>
-                    <UploadCloud size={17} /> {comparisonLoading === 'budget' ? 'Lendo…' : budgetRows.length ? 'Trocar orçamento' : 'Selecionar orçamento'}
+                    <UploadCloud size={17} /> {comparisonLoading === 'budget' ? 'Lendo…' : budgetRows.length ? 'Adicionar mais arquivos' : 'Selecionar orçamento(s)'}
                   </button>
                   {budgetRows.length > 0 && <button className="comparison-remove" onClick={() => resetComparison('budget')}>Remover</button>}
                   {budgetRows.length > 0 && <strong>{budgetRows.length} itens lidos</strong>}
@@ -1199,10 +1244,10 @@ function App({ session }) {
                   <span className="comparison-step">2</span>
                   <FileSpreadsheet size={28} />
                   <h3>Pedido</h3>
-                  <p>{orderFileName || 'Arquivo devolvido pelo cliente'}</p>
-                  <input ref={orderFileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={event => readComparisonFile(event.target.files[0], 'order')} />
+                  <p className="uploaded-file-names">{orderFileName || 'Arquivo(s) devolvidos pelo cliente'}</p>
+                  <input ref={orderFileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={event => readComparisonFiles(event.target.files, 'order')} />
                   <button className="ghost-button" onClick={() => orderFileRef.current?.click()} disabled={comparisonLoading === 'order'}>
-                    <UploadCloud size={17} /> {comparisonLoading === 'order' ? 'Lendo…' : comparisonOrderRows.length ? 'Trocar pedido' : 'Selecionar pedido'}
+                    <UploadCloud size={17} /> {comparisonLoading === 'order' ? 'Lendo…' : comparisonOrderRows.length ? 'Adicionar mais arquivos' : 'Selecionar pedido(s)'}
                   </button>
                   {comparisonOrderRows.length > 0 && <button className="comparison-remove" onClick={() => resetComparison('order')}>Remover</button>}
                   {comparisonOrderRows.length > 0 && <strong>{comparisonOrderRows.length} itens lidos</strong>}
@@ -1272,22 +1317,26 @@ function App({ session }) {
               className={`dropzone ${isDragging ? 'dragging' : ''}`}
               onDragOver={event => { event.preventDefault(); setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
-              onDrop={event => { event.preventDefault(); setIsDragging(false); readFile(event.dataTransfer.files[0]) }}
+              onDrop={event => { event.preventDefault(); setIsDragging(false); readFiles(event.dataTransfer.files, false) }}
               onClick={() => fileRef.current?.click()}
             >
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => readFile(event.target.files[0])} hidden />
+              <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => readFiles(event.target.files, false)} hidden />
               <div className="upload-icon"><UploadCloud size={34} /></div>
               <h2>Envie a planilha do cliente</h2>
-              <p>Arraste o arquivo para cá ou clique para escolher</p>
-              <span>Excel, CSV, PDF, foto ou print</span>
-              <button>Selecionar arquivo</button>
+              <p>Arraste um ou vários arquivos para cá ou clique para escolher</p>
+              <span>Excel, CSV, PDF, fotos ou prints</span>
+              <button>Selecionar arquivo(s)</button>
             </div>
           ) : (
             <>
               <div className="file-card">
                 <div className="file-icon"><FileSpreadsheet size={25} /></div>
-                <div><strong>{fileName}</strong><span>Aba: {sheetName} · {workbookRows.length} linhas</span></div>
-                <button onClick={resetFile}><RotateCcw size={16} /> Trocar arquivo</button>
+                <div><strong>{fileName}</strong><span>{sheetName} · {workbookRows.length} linhas combinadas</span></div>
+                <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => readFiles(event.target.files, true)} hidden />
+                <div className="file-card-actions">
+                  <button onClick={() => fileRef.current?.click()}><Plus size={16} /> Adicionar mais arquivos</button>
+                  <button onClick={resetFile}><RotateCcw size={16} /> Limpar</button>
+                </div>
               </div>
 
               <div className="mapping-card">
