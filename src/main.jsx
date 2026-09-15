@@ -55,6 +55,19 @@ const parsePdfNumber = value => {
   return Number.isFinite(number) ? Math.trunc(number) : null
 }
 
+const parsePdfMoney = value => {
+  const text = String(value || '').trim()
+  if (!text) return 0
+  const comma = text.lastIndexOf(',')
+  const dot = text.lastIndexOf('.')
+  let normalized = text
+  if (comma > dot) normalized = text.replace(/\./g, '').replace(',', '.')
+  else if (dot > comma && comma >= 0) normalized = text.replace(/,/g, '')
+  else if (comma >= 0) normalized = text.replace(',', '.')
+  const number = Number(normalized)
+  return Number.isFinite(number) ? number : 0
+}
+
 const groupPdfLines = items => {
   const lines = []
   for (const item of items.filter(entry => entry.str?.trim())) {
@@ -105,6 +118,10 @@ const readPdfOrder = async file => {
   let stopped = false
 
   for (const lines of pages) {
+    const allItems = lines.flatMap(line => line.items)
+    const brandHeader = allItems.find(item => normalize(item.text) === 'marca')
+    const packageHeader = allItems.find(item => ['emb.', 'emb'].includes(normalize(item.text)))
+
     for (const line of lines) {
       const joined = normalize(line.items.map(item => item.text).join(' '))
       if (joined.includes('trocas pendentes')) {
@@ -112,11 +129,13 @@ const readPdfOrder = async file => {
         break
       }
 
-      const eanItem = line.items.find(item => /^\d{8,14}$/.test(item.text))
-      if (!eanItem) continue
+      const eanIndex = line.items.findIndex(item => /^\d{8,14}$/.test(item.text))
+      if (eanIndex < 0) continue
+      const eanItem = line.items[eanIndex]
 
-      const numericAfter = line.items
+      const numericAfterItems = line.items
         .filter(item => item.x > eanItem.x + 8 && /^\d+(?:[.,]\d+)?$/.test(item.text))
+      const numericAfter = numericAfterItems
         .map(item => parsePdfNumber(item.text))
         .filter(value => value !== null)
 
@@ -126,15 +145,38 @@ const readPdfOrder = async file => {
       } else if (numericAfter.length) {
         quantity = numericAfter[0]
       }
-
       if (!quantity) continue
+
+      let itemName = ''
+      if (modelId === 'flex-cbn') {
+        const beforeEan = line.items.slice(0, eanIndex).map(item => item.text).join(' ')
+        itemName = beforeEan.replace(/^\s*\d+\s+(?:RB|LO|SB)\w+\s+/i, '').trim()
+      } else {
+        const boundary = modelId === 'piraquara'
+          ? (brandHeader?.x || numericAfterItems[0]?.x)
+          : (packageHeader?.x || numericAfterItems[0]?.x)
+        itemName = line.items
+          .filter(item => item.x > eanItem.x + 4 && (!boundary || item.x < boundary - 2))
+          .map(item => item.text)
+          .join(' ')
+          .trim()
+      }
+
       const ean = cleanEan(eanItem.text)
-      seen.set(ean, (seen.get(ean) || 0) + quantity)
+      const lineTotal = parsePdfMoney(numericAfterItems.at(-1)?.text)
+      const existing = seen.get(ean)
+      if (existing) {
+        existing.Quantidade += quantity
+        existing.ValorTotal += lineTotal
+        if (!existing.Item && itemName) existing.Item = itemName
+      } else {
+        seen.set(ean, { EAN: ean, Item: itemName || 'Item sem descrição', Quantidade: quantity, ValorTotal: lineTotal })
+      }
     }
     if (stopped) break
   }
 
-  for (const [EAN, Quantidade] of seen.entries()) results.push({ EAN, Quantidade })
+  for (const item of seen.values()) results.push(item)
   if (!results.length) throw new Error('Não encontrei itens válidos neste PDF. O arquivo precisa de revisão.')
   return { modelId, rows: results }
 }
@@ -223,6 +265,7 @@ function App({ session }) {
   const [selectedId, setSelectedId] = useState('piraquara')
   const [fileName, setFileName] = useState('')
   const [workbookRows, setWorkbookRows] = useState([])
+  const [orderDetails, setOrderDetails] = useState([])
   const [sheetName, setSheetName] = useState('')
   const [headerRow, setHeaderRow] = useState(1)
   const [eanColumn, setEanColumn] = useState('')
@@ -260,6 +303,11 @@ function App({ session }) {
         (outputIndustry === 'TODAS' || item.Industria === outputIndustry)
       )
   }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, outputIndustry, catalogIndustries, headers.join('|')])
+
+  const completeItems = useMemo(() => orderDetails
+    .map(item => ({ ...item, Industria: catalogIndustries[item.EAN] || 'NAO_IDENTIFICADA' }))
+    .filter(item => ['RECKITT', 'LOREAL', '3M'].includes(item.Industria)),
+  [orderDetails, catalogIndustries])
 
   useEffect(() => {
     let active = true
@@ -330,6 +378,7 @@ function App({ session }) {
         setMessage({ type: 'success', text: 'Lendo e identificando o PDF…' })
         const { modelId, rows } = await readPdfOrder(file)
         setSelectedId(modelId)
+        setOrderDetails(rows)
         setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
         setFileName(file.name)
         setSheetName('Pedido extraído do PDF')
@@ -346,6 +395,7 @@ function App({ session }) {
       const workbook = XLSX.read(data, { type: 'array', cellDates: true })
       const firstSheet = workbook.SheetNames[0]
       const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, defval: '', raw: false })
+      setOrderDetails([])
       setWorkbookRows(rows)
       setFileName(file.name)
       setSheetName(firstSheet)
@@ -423,8 +473,47 @@ function App({ session }) {
     setMessage({ type: 'success', text: `Planilha convertida com ${converted.length} itens da indústria selecionada.` })
   }
 
+  const exportCompleteOrder = () => {
+    if (!completeItems.length) {
+      setMessage({ type: 'error', text: 'O pedido completo está disponível após carregar um PDF reconhecido.' })
+      return
+    }
+
+    const itemRows = completeItems.map(item => ({
+      EAN: item.EAN,
+      Item: item.Item,
+      Quantidade: item.Quantidade,
+    }))
+    const sheet = XLSX.utils.json_to_sheet(itemRows, { header: ['EAN', 'Item', 'Quantidade'] })
+    sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 14 }, { wch: 3 }, { wch: 22 }, { wch: 16 }]
+
+    const totals = {
+      RECKITT: completeItems.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
+      LOREAL: completeItems.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + item.ValorTotal, 0),
+      '3M': completeItems.filter(item => item.Industria === '3M').reduce((sum, item) => sum + item.ValorTotal, 0),
+    }
+    XLSX.utils.sheet_add_aoa(sheet, [
+      ['RESUMO DO PEDIDO', 'Valor'],
+      ['Reckitt', totals.RECKITT],
+      ["L'Oréal", totals.LOREAL],
+      ['3M', totals['3M']],
+      ['TOTAL DO PEDIDO', totals.RECKITT + totals.LOREAL + totals['3M']],
+    ], { origin: 'E1' })
+
+    for (const cell of ['F2', 'F3', 'F4', 'F5']) {
+      if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+    }
+
+    const workbook = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(workbook, sheet, 'Pedido completo')
+    const baseName = fileName.replace(/\.[^.]+$/, '') || 'pedido'
+    XLSX.writeFile(workbook, `${baseName}_pedido_completo.xlsx`)
+    setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens e resumo de valores.` })
+  }
+
   const resetFile = () => {
     setWorkbookRows([])
+    setOrderDetails([])
     setFileName('')
     setSheetName('')
     setEanColumn(selected.eanColumn || '')
@@ -576,10 +665,15 @@ function App({ session }) {
               </div>
 
               <div className="action-bar">
-                <div><strong>Arquivo padronizado</strong><span>Colunas: EAN e Quantidade, sem casas decimais.</span></div>
-                <button className="primary-button" onClick={exportFile} disabled={!converted.length}>
-                  <Download size={19} /> Converter e baixar
-                </button>
+                <div><strong>Dois arquivos disponíveis</strong><span>Reppos separado e pedido completo com valores por indústria.</span></div>
+                <div className="top-actions">
+                  <button className="ghost-button" onClick={exportCompleteOrder} disabled={!completeItems.length}>
+                    <Download size={19} /> Baixar pedido completo
+                  </button>
+                  <button className="primary-button" onClick={exportFile} disabled={!converted.length}>
+                    <Download size={19} /> Baixar Reckitt/Reppos
+                  </button>
+                </div>
               </div>
             </>
           )}
