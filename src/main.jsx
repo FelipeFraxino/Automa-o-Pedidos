@@ -193,15 +193,104 @@ const readPdfOrder = async file => {
   return { modelId, rows: results, documentTotal }
 }
 
-const cleanOcrEan = value => {
-  const digits = cleanEan(value)
-  // Em algumas tabelas o OCR lê 789... como 79... e elimina o 8.
-  if (digits.length === 12 && digits.startsWith('79')) return `78${digits.slice(1)}`
+const isValidEan13 = ean => {
+  if (!/^\d{13}$/.test(ean)) return false
+  const sum = ean.slice(0, 12).split('').reduce((total, digit, index) =>
+    total + Number(digit) * (index % 2 === 0 ? 1 : 3), 0)
+  return (10 - (sum % 10)) % 10 === Number(ean[12])
+}
+
+const normalizeOcrDigitToken = value => String(value || '')
+  .toUpperCase()
+  .replace(/[OQD]/g, '0')
+  .replace(/[IL|]/g, '1')
+  .replace(/Z/g, '2')
+  .replace(/S/g, '5')
+  .replace(/G/g, '6')
+  .replace(/B/g, '8')
+  .replace(/[^0-9]/g, '')
+
+const resolveOcrEan = (value, catalog = {}) => {
+  const digits = normalizeOcrDigitToken(value)
+  if (catalog[digits] || isValidEan13(digits)) return digits
+
+  const candidates = [...new Set(Object.keys(catalog))]
+    .filter(ean => ean.length === digits.length && /^\d{8,14}$/.test(ean))
+  let best = null
+  let bestDistance = Infinity
+  let tied = false
+  for (const candidate of candidates) {
+    let distance = 0
+    for (let index = 0; index < digits.length; index += 1) {
+      if (digits[index] !== candidate[index]) distance += 1
+    }
+    if (distance < bestDistance) {
+      best = candidate
+      bestDistance = distance
+      tied = false
+    } else if (distance === bestDistance) {
+      tied = true
+    }
+  }
+  if (best && !tied && bestDistance <= 2) return best
   return digits
 }
 
-const parseVariableText = text => {
+const cleanOcrEan = (value, catalog = {}) => resolveOcrEan(value, catalog)
+
+const parseAdegaText = (text, catalog = {}) => {
+  const rows = []
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, ' ').trim()
+    if (!line) continue
+    const tokens = [...line.matchAll(/[A-Za-z0-9]{11,16}/g)]
+    const eanToken = tokens.find(match => (match[0].match(/\d/g) || []).length >= 8)
+    if (!eanToken) continue
+    const EAN = resolveOcrEan(eanToken[0], catalog)
+    if (!/^\d{12,14}$/.test(EAN)) continue
+
+    const tail = line.slice((eanToken.index || 0) + eanToken[0].length)
+    const packageMatch = tail.match(/[_-]?0?\d{1,2}X\d+[A-Z0-9]*/i)
+    const numericTail = packageMatch ? tail.slice((packageMatch.index || 0) + packageMatch[0].length) : tail
+    const numericTokens = [...numericTail.matchAll(/\d[\d.,]*/g)].map(match => parsePdfMoney(match[0])).filter(Number.isFinite)
+    if (numericTokens.length < 2) continue
+
+    const ValorTotal = numericTokens.at(-1)
+    let ValorUnitario = 0
+    for (let index = numericTokens.length - 2; index >= 0; index -= 1) {
+      const candidate = numericTokens[index]
+      if (candidate > 0 && candidate < ValorTotal) {
+        ValorUnitario = candidate
+        break
+      }
+    }
+
+    let Quantidade = ValorUnitario ? Math.round(ValorTotal / ValorUnitario) : 0
+    if ((!Quantidade || Quantidade < 2) && packageMatch) {
+      const afterPackage = numericTail.match(/\d{1,4}/)
+      Quantidade = afterPackage ? Number(afterPackage[0]) : 0
+    }
+    if (!Quantidade || Quantidade < 1 || Quantidade > 5000) continue
+
+    let Item = tail.slice(0, packageMatch?.index ?? Math.max(0, tail.search(/\s0[.,]00/)))
+      .replace(/^\s*[A-Z0-9-]{3,12}\s+(?:\d{3,8}\s+)?/i, '')
+      .replace(/\b(?:UN|PC|PK|CX|LT)\b\s*$/i, '')
+      .replace(/[|_]+/g, ' ')
+      .trim()
+    if (!Item) Item = 'Item Adega Brasil para revisar'
+
+    rows.push({ EAN, Item, Quantidade, ValorUnitario, ValorTotal })
+  }
+  return mergeItemsByEan(rows)
+}
+
+const parseVariableText = (text, catalog = {}) => {
   const normalizedDocument = normalize(text)
+  if (normalizedDocument.includes('adega brasil') || normalizedDocument.includes('pedido emitido na unid')) {
+    const adegaRows = parseAdegaText(text, catalog)
+    if (adegaRows.length) return adegaRows
+  }
+
   const multiplyPackage = normalizedDocument.includes('sugestao de pedido') ||
     (normalizedDocument.includes('emb') && normalizedDocument.includes('qtde'))
   const results = new Map()
@@ -214,7 +303,7 @@ const parseVariableText = text => {
     const candidates = [...cleanedLine.matchAll(/\d{8,14}/g)]
     const eanMatch = candidates.find(match => match[0].length >= 12) || candidates[0]
     if (!eanMatch) continue
-    const EAN = cleanOcrEan(eanMatch[0])
+    const EAN = cleanOcrEan(eanMatch[0], catalog)
     const tail = cleanedLine.slice((eanMatch.index || 0) + eanMatch[0].length)
     const numbers = [...tail.matchAll(/\d+(?:[.,]\d+)?/g)]
     const required = multiplyPackage ? 4 : 3
@@ -237,11 +326,10 @@ const parseVariableText = text => {
     }
   }
 
-  // A leitura compacta sempre roda para recuperar linhas que o OCR separou pela grade.
   const compactText = text.replace(/\s+/g, ' ')
   const rowPattern = /(\d{12,14})[\s|\[\]_]+(.{3,220}?)[\s|\[\]_]+(\d{1,3}[.,]\d{3})[\s|\[\]_]+(\d{1,4}[.,]\d{3,4})[\s|\[\]_]+(\d{1,3}(?:\.\d{3})*[.,]\d{2})/g
   for (const match of compactText.matchAll(rowPattern)) {
-    const EAN = cleanOcrEan(match[1])
+    const EAN = cleanOcrEan(match[1], catalog)
     const Quantidade = parsePdfNumber(match[3])
     if (!EAN || !Quantidade) continue
     results.set(EAN, {
@@ -255,22 +343,28 @@ const parseVariableText = text => {
   return [...results.values()]
 }
 
-const prepareImageForOcr = async source => {
+const prepareImageForOcr = async (source, rotation = 0) => {
   if (!(source instanceof Blob) || !window.createImageBitmap) return source
   try {
     const bitmap = await window.createImageBitmap(source)
-    const scale = Math.max(1, Math.min(3, 2200 / bitmap.width))
+    const sideways = Math.abs(rotation) % 180 === 90
+    const rotatedWidth = sideways ? bitmap.height : bitmap.width
+    const rotatedHeight = sideways ? bitmap.width : bitmap.height
+    const scale = Math.max(1, Math.min(3, 2400 / rotatedWidth))
     const canvas = window.document.createElement('canvas')
-    canvas.width = Math.round(bitmap.width * scale)
-    canvas.height = Math.round(bitmap.height * scale)
+    canvas.width = Math.round(rotatedWidth * scale)
+    canvas.height = Math.round(rotatedHeight * scale)
     const context = canvas.getContext('2d', { willReadFrequently: true })
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
-    context.filter = 'grayscale(1) contrast(1.35)'
-    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    context.filter = 'grayscale(1) contrast(1.45)'
+    context.save()
+    context.translate(canvas.width / 2, canvas.height / 2)
+    context.rotate(rotation * Math.PI / 180)
+    context.drawImage(bitmap, -bitmap.width * scale / 2, -bitmap.height * scale / 2, bitmap.width * scale, bitmap.height * scale)
+    context.restore()
     bitmap.close()
 
-    // Remove as linhas longas da grade sem apagar os números e textos.
     const image = context.getImageData(0, 0, canvas.width, canvas.height)
     const pixels = image.data
     const rowDark = new Uint32Array(canvas.height)
@@ -279,14 +373,15 @@ const prepareImageForOcr = async source => {
     for (let y = 0; y < canvas.height; y += 1) {
       for (let x = 0; x < canvas.width; x += 1) {
         const index = (y * canvas.width + x) * 4
-        if (pixels[index] < 180) {
+        if (pixels[index] < 175) {
           rowDark[y] += 1
           columnDark[x] += 1
         }
       }
     }
 
-    const eraseRow = y => {
+    for (let y = 0; y < canvas.height; y += 1) {
+      if (rowDark[y] / canvas.width <= 0.45) continue
       for (let offset = -2; offset <= 2; offset += 1) {
         const target = y + offset
         if (target < 0 || target >= canvas.height) continue
@@ -296,7 +391,8 @@ const prepareImageForOcr = async source => {
         }
       }
     }
-    const eraseColumn = x => {
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (columnDark[x] / canvas.height <= 0.40) continue
       for (let offset = -2; offset <= 2; offset += 1) {
         const target = x + offset
         if (target < 0 || target >= canvas.width) continue
@@ -306,13 +402,6 @@ const prepareImageForOcr = async source => {
         }
       }
     }
-
-    for (let y = 0; y < canvas.height; y += 1) {
-      if (rowDark[y] / canvas.width > 0.45) eraseRow(y)
-    }
-    for (let x = 0; x < canvas.width; x += 1) {
-      if (columnDark[x] / canvas.height > 0.40) eraseColumn(x)
-    }
     context.putImageData(image, 0, 0)
     return canvas
   } catch {
@@ -320,17 +409,45 @@ const prepareImageForOcr = async source => {
   }
 }
 
+const scoreOcrText = text => {
+  const digitCodes = (text.match(/\b\d{12,14}\b/g) || []).length
+  const tableWords = (normalize(text).match(/adega brasil|cod.?barras|quantidade|descricao|pedido/g) || []).length
+  return digitCodes * 5 + tableWords
+}
+
 const recognizeImage = async source => {
   const uploadedImage = source instanceof Blob
   const worker = await createWorker('eng')
   try {
+    const rotations = uploadedImage ? [270, 90, 0] : [0]
+    let bestText = ''
+    let bestScore = -1
+    let bestSource = source
+
     await worker.setParameters({
-      tessedit_pageseg_mode: uploadedImage ? PSM.SINGLE_BLOCK : PSM.AUTO,
+      tessedit_pageseg_mode: uploadedImage ? PSM.SINGLE_COLUMN : PSM.AUTO,
       preserve_interword_spaces: '1',
     })
-    const preparedSource = await prepareImageForOcr(source)
-    const { data } = await worker.recognize(preparedSource)
-    return data.text || ''
+
+    for (const rotation of rotations) {
+      const preparedSource = await prepareImageForOcr(source, rotation)
+      const { data } = await worker.recognize(preparedSource)
+      const candidateText = data.text || ''
+      const candidateScore = scoreOcrText(candidateText)
+      if (candidateScore > bestScore) {
+        bestText = candidateText
+        bestScore = candidateScore
+        bestSource = preparedSource
+      }
+      if (candidateScore >= 18) break
+    }
+
+    if (uploadedImage) {
+      await worker.setParameters({ tessedit_pageseg_mode: PSM.SINGLE_BLOCK, preserve_interword_spaces: '1' })
+      const { data } = await worker.recognize(bestSource)
+      if (data.text) bestText += '\n' + data.text
+    }
+    return bestText
   } finally {
     await worker.terminate()
   }
@@ -773,7 +890,7 @@ function App({ session }) {
     try {
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
         setMessage({ type: 'success', text: `Lendo ${file.name} por OCR. Isso pode levar alguns minutos…` })
-        const rows = parseVariableText(await recognizeImage(file))
+        const rows = parseVariableText(await recognizeImage(file), catalogIndustries)
         if (!rows.length) throw new Error('A imagem foi lida, mas o formato da tabela ainda não foi reconhecido. O problema está no leitor, não na qualidade da foto.')
         await registerNewCatalogItems(rows)
         const imageModelId = selectedId === 'dalpar' ? 'dalpar' : 'personalizado'
@@ -806,7 +923,7 @@ function App({ session }) {
           documentTotal = parsed.documentTotal || 0
         } catch (pdfError) {
           setMessage({ type: 'success', text: `PDF escaneado detectado em ${file.name}. Iniciando OCR…` })
-          rows = parseVariableText(await recognizeScannedPdf(file))
+          rows = parseVariableText(await recognizeScannedPdf(file), catalogIndustries)
           modelId = 'personalizado'
           if (!rows.length) throw pdfError
         }
@@ -1031,12 +1148,12 @@ function App({ session }) {
     try {
       let rows
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
-        rows = parseVariableText(await recognizeImage(file))
+        rows = parseVariableText(await recognizeImage(file), catalogIndustries)
       } else if (extension === 'pdf') {
         try {
           rows = (await readPdfOrder(file)).rows
         } catch {
-          rows = parseVariableText(await recognizeScannedPdf(file))
+          rows = parseVariableText(await recognizeScannedPdf(file), catalogIndustries)
         }
       } else {
         rows = await parseSpreadsheetOrder(file)
