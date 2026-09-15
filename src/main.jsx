@@ -544,6 +544,8 @@ function App({ session }) {
   const [catalogIndustries, setCatalogIndustries] = useState({})
   const [message, setMessage] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
+  const [pendingFiles, setPendingFiles] = useState([])
+  const [processingFiles, setProcessingFiles] = useState(false)
   const fileRef = useRef(null)
   const [showPasswordSetup, setShowPasswordSetup] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -766,7 +768,7 @@ function App({ session }) {
     const extension = file.name.split('.').pop()?.toLowerCase()
     if (!['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
       setMessage({ type: 'error', text: 'Use Excel, CSV, PDF, PNG, JPG ou WEBP.' })
-      return
+      return -1
     }
     try {
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
@@ -830,6 +832,7 @@ function App({ session }) {
       const workbook = XLSX.read(data, { type: 'array', cellDates: true })
       const firstSheet = workbook.SheetNames[0]
       const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, defval: '', raw: false })
+      if (rows.length < 2) throw new Error('A planilha não contém linhas de produtos para processar.')
       setOrderDetails([])
       setSourceOrderTotal(previous => append ? previous : 0)
       setWorkbookRows(previous => append && previous.length ? [previous[0], ...previous.slice(1), ...rows.slice(1)] : rows)
@@ -838,19 +841,48 @@ function App({ session }) {
       return Math.max(0, rows.length - 1)
     } catch (readError) {
       setMessage({ type: 'error', text: `${file.name}: ${readError.message || 'não foi possível ler o arquivo.'}` })
-      return 0
+      return -1
     }
   }
 
-  const readFiles = async (fileList, appendExisting = false) => {
+  const stageFiles = (fileList, append = false) => {
     const files = [...(fileList || [])]
     if (!files.length) return
-    let totalRead = 0
-    for (let index = 0; index < files.length; index += 1) {
-      totalRead += await readFile(files[index], appendExisting || index > 0)
-    }
+    setPendingFiles(previous => append ? [...previous, ...files] : files)
+    setMessage(null)
     if (fileRef.current) fileRef.current.value = ''
-    setMessage({ type: 'success', text: `${files.length} arquivo(s) processado(s). ${totalRead} linhas ou itens adicionados ao pedido.` })
+  }
+
+  const readFiles = async (files, appendExisting = false) => {
+    if (!files.length) return { totalRead: 0, failures: 0 }
+    let totalRead = 0
+    let failures = 0
+    for (let index = 0; index < files.length; index += 1) {
+      const result = await readFile(files[index], appendExisting || index > 0)
+      if (result < 0) failures += 1
+      else totalRead += result
+    }
+
+    if (totalRead > 0) {
+      setMessage({
+        type: 'success',
+        text: `${files.length - failures} arquivo(s) processado(s). ${totalRead} linhas ou itens adicionados ao pedido.`,
+      })
+    } else {
+      setMessage({
+        type: 'error',
+        text: 'Os arquivos foram abertos, mas nenhum item válido foi encontrado. Confira o formato ou envie os arquivos para ajustarmos o leitor.',
+      })
+    }
+    return { totalRead, failures }
+  }
+
+  const processPendingFiles = async () => {
+    if (!pendingFiles.length || processingFiles) return
+    setProcessingFiles(true)
+    const result = await readFiles(pendingFiles, workbookRows.length > 0)
+    setProcessingFiles(false)
+    if (result.totalRead > 0) setPendingFiles([])
   }
 
   const saveCurrentModel = async () => {
@@ -1156,6 +1188,7 @@ function App({ session }) {
   }
 
   const resetFile = () => {
+    setPendingFiles([])
     setWorkbookRows([])
     setOrderDetails([])
     setSourceOrderTotal(0)
@@ -1314,31 +1347,59 @@ function App({ session }) {
             <>
           {!workbookRows.length ? (
             <div
-              className={`dropzone ${isDragging ? 'dragging' : ''}`}
+              className={`dropzone ${isDragging ? 'dragging' : ''} ${pendingFiles.length ? 'has-pending-files' : ''}`}
               onDragOver={event => { event.preventDefault(); setIsDragging(true) }}
               onDragLeave={() => setIsDragging(false)}
-              onDrop={event => { event.preventDefault(); setIsDragging(false); readFiles(event.dataTransfer.files, false) }}
-              onClick={() => fileRef.current?.click()}
+              onDrop={event => { event.preventDefault(); setIsDragging(false); stageFiles(event.dataTransfer.files, false) }}
+              onClick={() => !pendingFiles.length && fileRef.current?.click()}
             >
-              <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => readFiles(event.target.files, false)} hidden />
-              <div className="upload-icon"><UploadCloud size={34} /></div>
-              <h2>Envie a planilha do cliente</h2>
-              <p>Arraste um ou vários arquivos para cá ou clique para escolher</p>
-              <span>Excel, CSV, PDF, fotos ou prints</span>
-              <button>Selecionar arquivo(s)</button>
+              <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => stageFiles(event.target.files, false)} hidden />
+              {pendingFiles.length ? (
+                <>
+                  <div className="upload-icon"><FileSpreadsheet size={34} /></div>
+                  <h2>{pendingFiles.length} arquivo(s) selecionado(s)</h2>
+                  <div className="pending-file-list">
+                    {pendingFiles.map((file, index) => <span key={`${file.name}-${index}`}>{file.name}</span>)}
+                  </div>
+                  <div className="pending-file-actions">
+                    <button className="secondary-upload-button" onClick={event => { event.stopPropagation(); fileRef.current?.click() }}>Alterar seleção</button>
+                    <button className="process-files-button" disabled={processingFiles} onClick={event => { event.stopPropagation(); processPendingFiles() }}>
+                      {processingFiles ? 'Processando…' : 'Processar arquivos'}
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="upload-icon"><UploadCloud size={34} /></div>
+                  <h2>Envie a planilha do cliente</h2>
+                  <p>Arraste um ou vários arquivos para cá ou clique para escolher</p>
+                  <span>Excel, CSV, PDF, fotos ou prints</span>
+                  <button>Selecionar arquivo(s)</button>
+                </>
+              )}
             </div>
           ) : (
             <>
               <div className="file-card">
                 <div className="file-icon"><FileSpreadsheet size={25} /></div>
                 <div><strong>{fileName}</strong><span>{sheetName} · {workbookRows.length} linhas combinadas</span></div>
-                <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => readFiles(event.target.files, true)} hidden />
+                <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => stageFiles(event.target.files, true)} hidden />
                 <div className="file-card-actions">
                   <button onClick={() => fileRef.current?.click()}><Plus size={16} /> Adicionar mais arquivos</button>
                   <button onClick={resetFile}><RotateCcw size={16} /> Limpar</button>
                 </div>
               </div>
-
+              {pendingFiles.length > 0 && (
+                <div className="pending-processing-card">
+                  <div>
+                    <strong>{pendingFiles.length} novo(s) arquivo(s) aguardando</strong>
+                    <span>{pendingFiles.map(file => file.name).join(', ')}</span>
+                  </div>
+                  <button className="primary-button" disabled={processingFiles} onClick={processPendingFiles}>
+                    {processingFiles ? 'Processando…' : 'Processar arquivos'}
+                  </button>
+                </div>
+              )}
               <div className="mapping-card">
                 <div className="section-heading">
                   <div><span>2</span><div><h2>Configure as colunas</h2><p>Indique onde estão os dados no arquivo recebido.</p></div></div>
