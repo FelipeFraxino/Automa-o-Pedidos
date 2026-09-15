@@ -66,7 +66,7 @@ const parsePdfNumber = value => {
 }
 
 const parsePdfMoney = value => {
-  const text = String(value || '').trim()
+  const text = String(value || '').trim().replace(/R\$\s*/gi, '')
   if (!text) return 0
   const comma = text.lastIndexOf(',')
   const dot = text.lastIndexOf('.')
@@ -76,6 +76,20 @@ const parsePdfMoney = value => {
   else if (comma >= 0) normalized = text.replace(',', '.')
   const number = Number(normalized)
   return Number.isFinite(number) ? number : 0
+}
+
+const extractPrintedDocumentTotal = text => {
+  const values = []
+  for (const rawLine of String(text || '').split(/\r?\n/)) {
+    const line = normalize(rawLine)
+    if (!line.includes('total')) continue
+    if (!/(liquid|pedido|valor|vl\s*total)/.test(line)) continue
+    for (const match of rawLine.matchAll(/\d{1,3}(?:[.\s]\d{3})*,\d{2}|\d+[.,]\d{2}/g)) {
+      const value = parsePdfMoney(match[0].replace(/\s/g, '.'))
+      if (value > 0) values.push(value)
+    }
+  }
+  return values.length ? Math.max(...values) : 0
 }
 
 const groupPdfLines = items => {
@@ -174,13 +188,26 @@ const readPdfOrder = async file => {
 
       const ean = cleanEan(eanItem.text)
       const lineTotal = parsePdfMoney(numericAfterItems.at(-1)?.text)
+      const unitCandidates = numericAfterItems.slice(0, -1)
+        .map(item => parsePdfMoney(item.text))
+        .filter(value => value > 0)
+      const ValorUnitario = unitCandidates.length && lineTotal
+        ? unitCandidates.reduce((best, value) =>
+          Math.abs(value * quantity - lineTotal) < Math.abs(best * quantity - lineTotal) ? value : best
+        )
+        : 0
+      const beforeEan = line.items.slice(0, eanIndex).map(item => item.text).join(' ')
+      const internalMatch = beforeEan.match(/\b(?:RB|LO|SB)[A-Z0-9-]+\b/i)
+      const CodigoInterno = internalMatch?.[0] || ''
       const existing = seen.get(ean)
       if (existing) {
         existing.Quantidade += quantity
         existing.ValorTotal += lineTotal
         if (!existing.Item && itemName) existing.Item = itemName
+        if (!existing.ValorUnitario && ValorUnitario) existing.ValorUnitario = ValorUnitario
+        if (!existing.CodigoInterno && CodigoInterno) existing.CodigoInterno = CodigoInterno
       } else {
-        seen.set(ean, { EAN: ean, Item: itemName || 'Item sem descrição', Quantidade: quantity, ValorTotal: lineTotal })
+        seen.set(ean, { EAN: ean, CodigoInterno, Item: itemName || 'Item sem descrição', Quantidade: quantity, ValorUnitario, ValorTotal: lineTotal })
       }
     }
     if (stopped) break
@@ -189,7 +216,8 @@ const readPdfOrder = async file => {
   for (const item of seen.values()) results.push(item)
   if (!results.length) throw new Error('Não encontrei itens válidos neste PDF. O arquivo precisa de revisão.')
   const printedTotalMatch = fullText.match(/Vl\s*Total\s*\$?\s*([\d.,]+)/i)
-  const documentTotal = printedTotalMatch ? parsePdfMoney(printedTotalMatch[1]) : 0
+  const documentTotal = extractPrintedDocumentTotal(fullText) ||
+    (printedTotalMatch ? parsePdfMoney(printedTotalMatch[1]) : 0)
   return { modelId, rows: results, documentTotal }
 }
 
@@ -250,8 +278,12 @@ const parseAdegaText = (text, catalog = {}) => {
     if (!/^\d{12,14}$/.test(EAN)) continue
 
     const tail = line.slice((eanToken.index || 0) + eanToken[0].length)
-    const packageMatch = tail.match(/[_-]?0?\d{1,2}X\d+[A-Z0-9]*/i)
-    const numericTail = packageMatch ? tail.slice((packageMatch.index || 0) + packageMatch[0].length) : tail
+    const codePrefix = tail.match(/^\s*((?:[A-Z]{0,3}\d[A-Z0-9.,/-]*\s+){1,5})/i)?.[1] || ''
+    const internalCandidates = [...codePrefix.matchAll(/\b\d{3,7}\b/g)].map(match => match[0])
+    const CodigoInterno = internalCandidates.at(-1) || ''
+    const dataTail = codePrefix ? tail.slice(tail.indexOf(codePrefix) + codePrefix.length) : tail
+    const packageMatch = dataTail.match(/[_-]?0?\d{1,2}X\d+[A-Z0-9]*/i)
+    const numericTail = packageMatch ? dataTail.slice((packageMatch.index || 0) + packageMatch[0].length) : dataTail
     const numericTokens = [...numericTail.matchAll(/\d[\d.,]*/g)].map(match => parsePdfMoney(match[0])).filter(Number.isFinite)
     if (numericTokens.length < 2) continue
 
@@ -272,14 +304,14 @@ const parseAdegaText = (text, catalog = {}) => {
     }
     if (!Quantidade || Quantidade < 1 || Quantidade > 5000) continue
 
-    let Item = tail.slice(0, packageMatch?.index ?? Math.max(0, tail.search(/\s0[.,]00/)))
+    let Item = dataTail.slice(0, packageMatch?.index ?? Math.max(0, dataTail.search(/\s0[.,]00/)))
       .replace(/^\s*[A-Z0-9-]{3,12}\s+(?:\d{3,8}\s+)?/i, '')
       .replace(/\b(?:UN|PC|PK|CX|LT)\b\s*$/i, '')
       .replace(/[|_]+/g, ' ')
       .trim()
     if (!Item) Item = 'Item Adega Brasil para revisar'
 
-    rows.push({ EAN, Item, Quantidade, ValorUnitario, ValorTotal })
+    rows.push({ EAN, CodigoInterno, Item, Quantidade, ValorUnitario, ValorTotal })
   }
   return mergeItemsByEan(rows)
 }
@@ -485,6 +517,7 @@ const mergeItemsByEan = rows => {
       current.ValorTotal += item.ValorTotal || 0
       if ((!current.Item || current.Item === 'Item sem descrição' || current.Item === 'Item para revisar') && item.Item) current.Item = item.Item
       if (!current.ValorUnitario && item.ValorUnitario) current.ValorUnitario = item.ValorUnitario
+      if (!current.CodigoInterno && item.CodigoInterno) current.CodigoInterno = item.CodigoInterno
     } else {
       merged.set(item.EAN, { ...item })
     }
@@ -521,6 +554,10 @@ const parseSpreadsheetOrder = async file => {
   const packageIndex = headers.findIndex(value => /^emb|embalagem/.test(normalize(value)))
   const totalIndex = headers.findIndex(value => /(^|\s)(vl\.?\s*)?total|valor pedido/.test(normalize(value)))
   const unitIndex = headers.findIndex(value => /unit|vlr\.?$|valor$|preco|preço|^cbn$/.test(normalize(value)))
+  const internalCodeIndex = headers.findIndex((value, index) => {
+    const header = normalize(value).replace(/\./g, '').trim()
+    return index !== eanIndex && /^(cod|codigo|codigo interno|cod interno|codigo produto|cod produto)$/.test(header)
+  })
   if (eanIndex < 0 || quantityIndex < 0) throw new Error('Não encontrei as colunas de EAN e quantidade neste arquivo.')
   const shouldMultiply = packageIndex >= 0 && quantityIndex >= 0 &&
     headers.some(value => /sugestao|sugestão/.test(normalize(value))) ||
@@ -538,6 +575,7 @@ const parseSpreadsheetOrder = async file => {
     const ValorTotal = totalIndex >= 0 ? parsePdfMoney(row[totalIndex]) : ValorUnitario * Quantidade
     rows.push({
       EAN,
+      CodigoInterno: internalCodeIndex >= 0 ? String(row[internalCodeIndex] || '').trim() : '',
       Item: itemIndex >= 0 ? String(row[itemIndex] || '').trim() || 'Item sem descrição' : 'Item sem descrição',
       Quantidade,
       ValorUnitario,
@@ -739,6 +777,7 @@ function App({ session }) {
       const normalizedItem = {
         ...item,
         Item: item.Item && item.Item !== 'Item sem descrição' ? item.Item : budget?.Item || 'Item sem descrição',
+        CodigoInterno: item.CodigoInterno || budget?.CodigoInterno || '',
         ValorUnitario: item.ValorUnitario || budgetUnit,
         ValorTotal: value,
         Industria: industry,
@@ -894,12 +933,14 @@ function App({ session }) {
     try {
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
         setMessage({ type: 'success', text: `Lendo ${file.name} por OCR. Isso pode levar alguns minutos…` })
-        const rows = parseVariableText(await recognizeImage(file), catalogIndustries)
+        const recognizedText = await recognizeImage(file)
+        const rows = parseVariableText(recognizedText, catalogIndustries)
+        const printedTotal = extractPrintedDocumentTotal(recognizedText)
         if (!rows.length) throw new Error('A imagem foi lida, mas o formato da tabela ainda não foi reconhecido. O problema está no leitor, não na qualidade da foto.')
         await registerNewCatalogItems(rows)
         const imageModelId = selectedId === 'dalpar' ? 'dalpar' : 'personalizado'
         if (!append) setSelectedId(imageModelId)
-        setSourceOrderTotal(previous => append ? previous : 0)
+        setSourceOrderTotal(previous => append ? previous + printedTotal : printedTotal)
         setOrderDetails(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
         setWorkbookRows(previous => {
           const added = rows.map(row => [row.EAN, row.Quantidade])
@@ -927,7 +968,9 @@ function App({ session }) {
           documentTotal = parsed.documentTotal || 0
         } catch (pdfError) {
           setMessage({ type: 'success', text: `PDF escaneado detectado em ${file.name}. Iniciando OCR…` })
-          rows = parseVariableText(await recognizeScannedPdf(file), catalogIndustries)
+          const recognizedText = await recognizeScannedPdf(file)
+          rows = parseVariableText(recognizedText, catalogIndustries)
+          documentTotal = extractPrintedDocumentTotal(recognizedText)
           modelId = 'personalizado'
           if (!rows.length) throw pdfError
         }
@@ -1077,7 +1120,7 @@ function App({ session }) {
 
   const exportCompleteOrder = () => {
     if (!completeItems.length) {
-      setMessage({ type: 'error', text: 'O pedido completo está disponível após carregar um PDF reconhecido.' })
+      setMessage({ type: 'error', text: 'O pedido completo está disponível após carregar um arquivo reconhecido.' })
       return
     }
 
@@ -1087,35 +1130,38 @@ function App({ session }) {
       { code: '3M', label: '3M' },
       { code: 'NAO_IDENTIFICADA', label: 'ITENS NOVOS / A REVISAR' },
     ]
-    const sheetRows = [['EAN', 'Item', 'Quantidade', 'Valor total do item']]
+    const sheetRows = [['EAN', 'COD.', 'Item', 'Quantidade', 'Valor unitário', 'Valor total do item']]
     const sectionRows = []
 
     for (const group of groups) {
-      if (sheetRows.length > 1) sheetRows.push(['', '', '', ''])
+      if (sheetRows.length > 1) sheetRows.push(['', '', '', '', '', ''])
       sectionRows.push(sheetRows.length)
-      sheetRows.push([group.label, '', '', ''])
+      sheetRows.push([group.label, '', '', '', '', ''])
       for (const item of completeItems.filter(product => product.Industria === group.code)) {
-        sheetRows.push([item.EAN, item.Item, item.Quantidade, item.ValorTotal])
+        const unitValue = item.ValorUnitario || (item.Quantidade ? (item.ValorTotal || 0) / item.Quantidade : 0)
+        sheetRows.push([item.EAN, item.CodigoInterno || '', item.Item, item.Quantidade, unitValue, item.ValorTotal || 0])
       }
     }
 
     const sheet = XLSX.utils.aoa_to_sheet(sheetRows)
-    sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 14 }, { wch: 20 }, { wch: 22 }, { wch: 16 }]
-    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 3 } }))
+    sheet['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 58 }, { wch: 14 }, { wch: 18 }, { wch: 20 }, { wch: 43 }, { wch: 18 }]
+    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 5 } }))
     for (let row = 1; row < sheetRows.length; row += 1) {
-      const cell = `D${row + 1}`
-      if (typeof sheetRows[row][3] === 'number' && sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+      for (const column of ['E', 'F']) {
+        const cell = `${column}${row + 1}`
+        if (typeof sheetRows[row][column === 'E' ? 4 : 5] === 'number' && sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+      }
     }
 
     const totals = {
-      RECKITT: completeItems.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
-      LOREAL: completeItems.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + item.ValorTotal, 0),
-      '3M': completeItems.filter(item => item.Industria === '3M').reduce((sum, item) => sum + item.ValorTotal, 0),
-      A_REVISAR: completeItems.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + item.ValorTotal, 0),
+      RECKITT: completeItems.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+      LOREAL: completeItems.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+      '3M': completeItems.filter(item => item.Industria === '3M').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+      A_REVISAR: completeItems.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
     }
-    const itemsTotal = completeItems.reduce((sum, item) => sum + item.ValorTotal, 0)
-    const grandTotal = sourceOrderTotal || itemsTotal
-    const documentAdjustment = sourceOrderTotal ? sourceOrderTotal - itemsTotal : 0
+    const itemsTotal = completeItems.reduce((sum, item) => sum + (item.ValorTotal || 0), 0)
+    const grandTotal = sourceOrderTotal > 0 ? sourceOrderTotal : itemsTotal
+    const documentAdjustment = sourceOrderTotal > 0 ? sourceOrderTotal - itemsTotal : 0
     const summaryRows = [
       ['RESUMO DO PEDIDO', 'Valor'],
       ['Reckitt', totals.RECKITT],
@@ -1123,12 +1169,14 @@ function App({ session }) {
       ['3M', totals['3M']],
       ['Itens novos / a revisar', totals.A_REVISAR],
     ]
-    if (Math.abs(documentAdjustment) >= 0.005) summaryRows.push(['Ajuste conforme total impresso no documento', documentAdjustment])
-    summaryRows.push(['TOTAL DO PEDIDO', grandTotal])
-    XLSX.utils.sheet_add_aoa(sheet, summaryRows, { origin: 'E1' })
+    if (Math.abs(documentAdjustment) >= 0.005) {
+      summaryRows.push(['Diferença de itens/valores não reconhecidos no OCR', documentAdjustment])
+    }
+    summaryRows.push(['TOTAL DO PEDIDO (conferido com o documento)', grandTotal])
+    XLSX.utils.sheet_add_aoa(sheet, summaryRows, { origin: 'G1' })
 
     for (let row = 2; row <= summaryRows.length; row += 1) {
-      const cell = `F${row}`
+      const cell = `H${row}`
       if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
     }
 
@@ -1136,7 +1184,7 @@ function App({ session }) {
     XLSX.utils.book_append_sheet(workbook, sheet, 'Pedido completo')
     const baseName = fileName.replace(/\.[^.]+$/, '') || 'pedido'
     XLSX.writeFile(workbook, `${baseName}_pedido_completo.xlsx`)
-    setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens e resumo de valores.` })
+    setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens. Total conferido: ${grandTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.` })
   }
 
   const readComparisonFile = async (file, kind, append = true) => {
@@ -1217,62 +1265,68 @@ function App({ session }) {
       { code: '3M', label: '3M' },
       { code: 'NAO_IDENTIFICADA', label: 'ITENS NOVOS / A REVISAR' },
     ]
-    const sheetRows = [['EAN', 'Item', 'Quantidade', 'Valor total do item', 'Indústria']]
+    const sheetRows = [['EAN', 'COD.', 'Item', 'Quantidade', 'Valor unitário', 'Valor total do item', 'Indústria']]
     const sectionRows = []
 
     for (const group of groups) {
-      if (sheetRows.length > 1) sheetRows.push(['', '', '', '', ''])
+      if (sheetRows.length > 1) sheetRows.push(['', '', '', '', '', '', ''])
       sectionRows.push(sheetRows.length)
-      sheetRows.push([group.label, '', '', '', ''])
+      sheetRows.push([group.label, '', '', '', '', '', ''])
       for (const item of pedido.filter(product => product.Industria === group.code)) {
-        sheetRows.push([item.EAN, item.Item, item.Quantidade, item.ValorTotal, group.label])
+        const unitValue = item.ValorUnitario || (item.Quantidade ? (item.ValorTotal || 0) / item.Quantidade : 0)
+        sheetRows.push([item.EAN, item.CodigoInterno || '', item.Item, item.Quantidade, unitValue, item.ValorTotal || 0, group.label])
       }
     }
 
-    sheetRows.push(['', '', '', '', ''])
+    sheetRows.push(['', '', '', '', '', '', ''])
     sectionRows.push(sheetRows.length)
-    sheetRows.push(['ITENS EXCLUÍDOS DO PEDIDO', '', '', '', ''])
-    sheetRows.push(['EAN', 'Item', 'Quantidade no orçamento', 'Valor no orçamento', 'Indústria'])
+    sheetRows.push(['ITENS EXCLUÍDOS DO PEDIDO', '', '', '', '', '', ''])
+    sheetRows.push(['EAN', 'COD.', 'Item', 'Quantidade no orçamento', 'Valor unitário', 'Valor no orçamento', 'Indústria'])
     for (const item of excluidos) {
       const industryLabel = item.Industria === 'LOREAL' ? "L'ORÉAL" : item.Industria === 'NAO_IDENTIFICADA' ? 'A REVISAR' : item.Industria
-      sheetRows.push([item.EAN, item.Item, item.Quantidade, item.ValorTotal || 0, industryLabel])
+      const unitValue = item.ValorUnitario || (item.Quantidade ? (item.ValorTotal || 0) / item.Quantidade : 0)
+      sheetRows.push([item.EAN, item.CodigoInterno || '', item.Item, item.Quantidade, unitValue, item.ValorTotal || 0, industryLabel])
     }
-    if (!excluidos.length) sheetRows.push(['Nenhum item excluído', '', '', '', ''])
+    if (!excluidos.length) sheetRows.push(['Nenhum item excluído', '', '', '', '', '', ''])
 
-    sheetRows.push(['', '', '', '', ''])
+    sheetRows.push(['', '', '', '', '', '', ''])
     sectionRows.push(sheetRows.length)
-    sheetRows.push(['RESUMO DA PERDA DO PEDIDO', '', '', '', ''])
-    sheetRows.push(['Indústria', 'Quantidade retirada', '', 'Valor perdido', ''])
+    sheetRows.push(['RESUMO DA PERDA DO PEDIDO', '', '', '', '', '', ''])
+    sheetRows.push(['Indústria', '', 'Quantidade retirada', '', '', 'Valor perdido', ''])
     for (const group of groups) {
       const loss = comparisonLoss.byIndustry[group.code]
-      sheetRows.push([group.label, loss.quantidade, '', loss.valor, ''])
+      sheetRows.push([group.label, '', loss.quantidade, '', '', loss.valor, ''])
     }
-    sheetRows.push(['TOTAL DA PERDA', comparisonLoss.quantidade, '', comparisonLoss.valor, ''])
+    sheetRows.push(['TOTAL DA PERDA', '', comparisonLoss.quantidade, '', '', comparisonLoss.valor, ''])
 
     const sheet = XLSX.utils.aoa_to_sheet(sheetRows)
-    sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 23 }, { wch: 22 }, { wch: 18 }, { wch: 18 }]
-    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 4 } }))
+    sheet['!cols'] = [{ wch: 18 }, { wch: 14 }, { wch: 58 }, { wch: 23 }, { wch: 18 }, { wch: 22 }, { wch: 18 }, { wch: 22 }, { wch: 18 }]
+    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 6 } }))
     for (let row = 1; row < sheetRows.length; row += 1) {
-      const cell = `D${row + 1}`
-      if (typeof sheetRows[row][3] === 'number' && sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+      for (const column of ['E', 'F']) {
+        const cell = `${column}${row + 1}`
+        if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+      }
     }
 
     const totals = {
-      RECKITT: pedido.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
-      LOREAL: pedido.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + item.ValorTotal, 0),
-      '3M': pedido.filter(item => item.Industria === '3M').reduce((sum, item) => sum + item.ValorTotal, 0),
-      A_REVISAR: pedido.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + item.ValorTotal, 0),
+      RECKITT: pedido.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+      LOREAL: pedido.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+      '3M': pedido.filter(item => item.Industria === '3M').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+      A_REVISAR: pedido.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
     }
-    const grandTotal = pedido.reduce((sum, item) => sum + item.ValorTotal, 0)
-    XLSX.utils.sheet_add_aoa(sheet, [
+    const grandTotal = pedido.reduce((sum, item) => sum + (item.ValorTotal || 0), 0)
+    const summaryRows = [
       ['RESUMO DO PEDIDO', 'Valor'],
       ['Reckitt', totals.RECKITT],
       ["L'Oréal", totals.LOREAL],
       ['3M', totals['3M']],
       ['Itens novos / a revisar', totals.A_REVISAR],
       ['TOTAL DO PEDIDO', grandTotal],
-    ], { origin: 'F1' })
-    for (const cell of ['G2', 'G3', 'G4', 'G5', 'G6']) {
+    ]
+    XLSX.utils.sheet_add_aoa(sheet, summaryRows, { origin: 'H1' })
+    for (let row = 2; row <= summaryRows.length; row += 1) {
+      const cell = `I${row}`
       if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
     }
 
@@ -1582,14 +1636,16 @@ function App({ session }) {
                 <div className="table-wrap">
                   {orderDetails.length ? (
                     <table>
-                      <thead><tr><th>EAN</th><th>Item</th><th>Quantidade</th><th>Valor total</th><th>Indústria</th></tr></thead>
+                      <thead><tr><th>EAN</th><th>COD.</th><th>Item</th><th>Quantidade</th><th>Valor unitário</th><th>Valor total</th><th>Indústria</th></tr></thead>
                       <tbody>
                         {detailedPreview.slice(0, 12).map((row, index) => (
                           <tr key={index}>
                             <td>{row.EAN}</td>
+                            <td>{row.CodigoInterno || '—'}</td>
                             <td>{row.Item}</td>
                             <td>{row.Quantidade}</td>
-                            <td>{row.ValorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td>{(row.ValorUnitario || (row.Quantidade ? (row.ValorTotal || 0) / row.Quantidade : 0)).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td>{(row.ValorTotal || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
                             <td>
                               <span className={row.Industria === 'NAO_IDENTIFICADA' ? 'login-error' : 'valid'}>
                                 {row.Industria === 'LOREAL' ? "L'Oréal" : row.Industria === 'NAO_IDENTIFICADA' ? 'Revisar EAN' : row.Industria}
