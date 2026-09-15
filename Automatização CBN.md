@@ -323,3 +323,14 @@ Atualização de 15/09/2026:
 - em fotos e PDFs escaneados, o campo `Total líquido` impresso no documento é usado como conferência obrigatória do total geral;
 - se o OCR não reconhecer todas as linhas, a diferença permanece visível como `Diferença de itens/valores não reconhecidos no OCR`, sem reduzir silenciosamente o pedido;
 - para o pedido WG Adega Brasil nº 208501, o total líquido de referência é `R$ 8.541,18`.
+
+
+### Revisão do OCR da Adega Brasil — 15/09/2026
+
+- o sistema testa todas as rotações da foto antes de escolher a melhor leitura;
+- as fotos são ampliadas para aumentar a leitura das 25 linhas do pedido;
+- duas passagens de OCR do mesmo item não podem mais duplicar a quantidade nem o valor;
+- EANs com um caractere inserido ou omitido pelo OCR são confrontados com o catálogo por distância de edição;
+- a prévia possui o campo editável `Total líquido impresso no pedido (R$)`, preenchido automaticamente quando possível;
+- esse campo serve como conferência final quando o OCR confundir algum dígito do total;
+- para o pedido nº 208501, deve ser informado `8541,18` caso a leitura automática não preencha corretamente.
