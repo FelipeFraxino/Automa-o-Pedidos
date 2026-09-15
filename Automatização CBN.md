@@ -131,11 +131,12 @@ Próximas etapas:
 
 1. Testar a leitura dos PDFs digitais de Piraquara, Ouro Branco e Flex CBN.
 2. Corrigir as regras específicas identificadas nos testes.
-3. Implementar OCR para Adega Brasil e Dalpar.
+3. Testar e aperfeiçoar o OCR do Modelo variável para Adega Brasil e Dalpar.
 4. Criar a tela de revisão dos itens identificados.
 5. Implementar separação e downloads por indústria.
 6. Implementar comparação entre orçamento enviado e pedido recebido.
 7. Automatizar futuramente a digitação no sistema da indústria, mantendo conferência humana antes do faturamento.
+8. Implementar o módulo de análise de MSL após o recebimento das planilhas de metas e levantamento.
 9. Depois que o conversor e os testes estiverem estáveis, iniciar a automação da digitação do pedido no portal/sistema da CBN.
 
 ## Próxima fase: automação da digitação no portal CBN
@@ -164,3 +165,29 @@ Prioridade de implementação:
 Objetivo final desta fase:
 
 Pedido recebido → conversor organiza e valida → automação digita no portal CBN → usuário confere → usuário autoriza o faturamento/envio.
+
+## Modelo variável
+
+O Modelo variável reúne as regras de leitura dos modelos existentes e aceita Excel, CSV, PDF digital, PDF escaneado, foto e print.
+
+A saída completa deve:
+
+- copiar os códigos de barras sem alterar nenhum dígito;
+- identificar e agrupar Reckitt, L'Oréal e 3M;
+- manter as colunas EAN, Item, Quantidade e Valor total do item;
+- mostrar os valores por indústria e o valor total do pedido;
+- exigir conferência quando a entrada for lida por OCR.
+
+## Futuro módulo de análise de MSL
+
+O sistema deverá confrontar a planilha de metas de MSL com a planilha de levantamento/venda do cliente.
+
+O módulo deverá:
+
+- identificar quais produtos fazem parte do MSL;
+- marcar visualmente esses itens na planilha de levantamento;
+- mostrar EANs já vendidos e ainda não vendidos;
+- indicar lojas que ainda precisam ser positivadas;
+- acompanhar a cobertura do mix por loja;
+- apresentar percentual realizado, pendências e evolução da meta;
+- permitir filtros por loja, produto, EAN e período.
