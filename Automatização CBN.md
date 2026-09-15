@@ -308,3 +308,18 @@ A leitura:
 Em fotos feitas sobre mesa ou superfície escura, a remoção da grade deve considerar somente pixels muito escuros. O fundo cinza não pode ser interpretado como uma linha da tabela, pois isso apagava a imagem antes do OCR.
 
 Páginas seguintes da Adega Brasil podem não repetir o nome da empresa. O leitor também identifica o modelo pelo padrão de embalagem, como 01X500ML, junto das linhas de produto.
+
+
+## Controle de totais e colunas completas
+
+Atualização de 15/09/2026:
+
+- a planilha Reckitt/Reppos permanece com exatamente duas colunas: `EAN` e `Quantidade`;
+- todas as planilhas completas passam a usar: `EAN`, `COD.`, `Item`, `Quantidade`, `Valor unitário` e `Valor total do item`;
+- o Confronto de arquivos também preserva essas informações e acrescenta a coluna de indústria;
+- `COD.` representa o código interno enviado pelo comprador; no pedido da WG Adega Brasil, é lido da coluna `COD.` ao lado do código de barras;
+- quando o arquivo não possuir código interno, a célula de `COD.` fica vazia, sem inventar códigos;
+- o valor unitário deve ser o valor enviado pelo comprador; quando o arquivo trouxer somente quantidade e total, ele pode ser calculado por total dividido pela quantidade;
+- em fotos e PDFs escaneados, o campo `Total líquido` impresso no documento é usado como conferência obrigatória do total geral;
+- se o OCR não reconhecer todas as linhas, a diferença permanece visível como `Diferença de itens/valores não reconhecidos no OCR`, sem reduzir silenciosamente o pedido;
+- para o pedido WG Adega Brasil nº 208501, o total líquido de referência é `R$ 8.541,18`.
