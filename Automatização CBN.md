@@ -77,14 +77,24 @@ A planilha deve conter exatamente:
 
 Não incluir descrição, preço, marca ou qualquer coluna adicional.
 
-## Comparação de arquivos
+## Confronto de arquivos
 
-O sistema terá um modo para comparar o orçamento enviado com o pedido devolvido pelo comprador. A comparação será feita por EAN e mostrará:
+O sistema possui um campo específico chamado “Confronto de arquivos”, com dois envios:
 
-- mantido;
-- quantidade alterada;
-- descartado;
-- incluído.
+1. Orçamento: arquivo original enviado ao cliente.
+2. Pedido: arquivo devolvido pelo comprador.
+
+Os dois campos aceitam Excel, CSV, PDF digital, PDF escaneado, foto ou print.
+
+A comparação é feita pelo EAN exato, preservando todos os dígitos. O resultado gera uma planilha com:
+
+- pedido final agrupado na sequência Reckitt, L'Oréal, 3M e itens novos / a revisar;
+- colunas EAN, Item, Quantidade, Valor total do item e Indústria;
+- resumo do valor de Reckitt, L'Oréal, 3M, itens a revisar e total geral do pedido;
+- seção “Itens excluídos do pedido” logo abaixo do pedido final;
+- quantidade e valor que cada item excluído possuía no orçamento.
+
+Quando o pedido não informa preço, o sistema calcula o valor usando o preço unitário identificado no orçamento. Um item é considerado excluído somente quando aparece no orçamento e não aparece no pedido. EANs novos presentes apenas no pedido permanecem na planilha e são marcados para revisão; eles nunca são descartados automaticamente.
 
 ## Segurança
 
@@ -118,7 +128,9 @@ Concluído:
 - endereço de retorno configurado para o GitHub Pages;
 - aplicação publicada no GitHub Pages;
 - mensagem mais clara para limite temporário de envio de e-mails;
-- prompt mestre e documentação inicial.
+- prompt mestre e documentação inicial;
+- módulo “Confronto de arquivos” com campos separados para Orçamento e Pedido;
+- comparação por EAN exato, reaproveitamento do preço do orçamento quando o pedido não informa valor e exportação dos itens excluídos.
 
 Endereço da aplicação:
 
