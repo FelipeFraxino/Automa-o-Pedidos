@@ -415,10 +415,16 @@ function App({ session }) {
       )
   }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, outputIndustry, catalogIndustries, headers.join('|')])
 
-  const completeItems = useMemo(() => orderDetails
-    .map(item => ({ ...item, Industria: catalogIndustries[item.EAN] || 'NAO_IDENTIFICADA' }))
+  const detailedPreview = useMemo(() => {
+    const order = { RECKITT: 0, LOREAL: 1, '3M': 2, NAO_IDENTIFICADA: 3 }
+    return orderDetails
+      .map(item => ({ ...item, Industria: catalogIndustries[item.EAN] || 'NAO_IDENTIFICADA' }))
+      .sort((a, b) => (order[a.Industria] ?? 3) - (order[b.Industria] ?? 3))
+  }, [orderDetails, catalogIndustries])
+
+  const completeItems = useMemo(() => detailedPreview
     .filter(item => ['RECKITT', 'LOREAL', '3M'].includes(item.Industria)),
-  [orderDetails, catalogIndustries])
+  [detailedPreview])
 
   useEffect(() => {
     let active = true
@@ -807,21 +813,49 @@ function App({ session }) {
 
               <div className="preview-card">
                 <div className="section-heading">
-                  <div><span>3</span><div><h2>Prévia do resultado</h2><p>O arquivo final terá somente EAN e Quantidade.</p></div></div>
-                  <b>{converted.length} itens válidos</b>
+                  <div>
+                    <span>3</span>
+                    <div>
+                      <h2>Prévia do resultado</h2>
+                      <p>{orderDetails.length ? 'Confira os itens lidos antes de baixar.' : 'O arquivo Reppos terá somente EAN e Quantidade.'}</p>
+                    </div>
+                  </div>
+                  <b>{orderDetails.length ? detailedPreview.length : converted.length} itens lidos</b>
                 </div>
                 <div className="table-wrap">
-                  <table>
-                    <thead><tr><th>EAN</th><th>Quantidade</th><th>Status</th></tr></thead>
-                    <tbody>
-                      {converted.slice(0, 8).map((row, index) => (
-                        <tr key={index}><td>{row.EAN}</td><td>{row.Quantidade}</td><td><span className="valid">Pronto</span></td></tr>
-                      ))}
-                      {!converted.length && <tr><td colSpan="3" className="empty">Selecione as colunas para gerar a prévia.</td></tr>}
-                    </tbody>
-                  </table>
+                  {orderDetails.length ? (
+                    <table>
+                      <thead><tr><th>EAN</th><th>Item</th><th>Quantidade</th><th>Valor total</th><th>Indústria</th></tr></thead>
+                      <tbody>
+                        {detailedPreview.slice(0, 12).map((row, index) => (
+                          <tr key={index}>
+                            <td>{row.EAN}</td>
+                            <td>{row.Item}</td>
+                            <td>{row.Quantidade}</td>
+                            <td>{row.ValorTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</td>
+                            <td>
+                              <span className={row.Industria === 'NAO_IDENTIFICADA' ? 'login-error' : 'valid'}>
+                                {row.Industria === 'LOREAL' ? "L'Oréal" : row.Industria === 'NAO_IDENTIFICADA' ? 'Revisar EAN' : row.Industria}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <table>
+                      <thead><tr><th>EAN</th><th>Quantidade</th><th>Status</th></tr></thead>
+                      <tbody>
+                        {converted.slice(0, 8).map((row, index) => (
+                          <tr key={index}><td>{row.EAN}</td><td>{row.Quantidade}</td><td><span className="valid">Pronto</span></td></tr>
+                        ))}
+                        {!converted.length && <tr><td colSpan="3" className="empty">Selecione as colunas para gerar a prévia.</td></tr>}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
-                {converted.length > 8 && <div className="more-rows">Mais {converted.length - 8} itens serão incluídos no arquivo.</div>}
+                {orderDetails.length > 12 && <div className="more-rows">Mais {orderDetails.length - 12} itens foram lidos.</div>}
+                {!orderDetails.length && converted.length > 8 && <div className="more-rows">Mais {converted.length - 8} itens serão incluídos no arquivo.</div>}
               </div>
 
               <div className="action-bar">
