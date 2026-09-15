@@ -484,21 +484,25 @@ function App({ session }) {
       { code: 'LOREAL', label: "L'ORÉAL" },
       { code: '3M', label: '3M' },
     ]
-    const sheetRows = [['EAN', 'Item', 'Quantidade']]
+    const sheetRows = [['EAN', 'Item', 'Quantidade', 'Valor total do item']]
     const sectionRows = []
 
     for (const group of groups) {
-      if (sheetRows.length > 1) sheetRows.push(['', '', ''])
+      if (sheetRows.length > 1) sheetRows.push(['', '', '', ''])
       sectionRows.push(sheetRows.length)
-      sheetRows.push([group.label, '', ''])
+      sheetRows.push([group.label, '', '', ''])
       for (const item of completeItems.filter(product => product.Industria === group.code)) {
-        sheetRows.push([item.EAN, item.Item, item.Quantidade])
+        sheetRows.push([item.EAN, item.Item, item.Quantidade, item.ValorTotal])
       }
     }
 
     const sheet = XLSX.utils.aoa_to_sheet(sheetRows)
-    sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 14 }, { wch: 3 }, { wch: 22 }, { wch: 16 }]
-    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 2 } }))
+    sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 14 }, { wch: 20 }, { wch: 22 }, { wch: 16 }]
+    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 3 } }))
+    for (let row = 1; row < sheetRows.length; row += 1) {
+      const cell = `D${row + 1}`
+      if (typeof sheetRows[row][3] === 'number' && sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
+    }
 
     const totals = {
       RECKITT: completeItems.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
