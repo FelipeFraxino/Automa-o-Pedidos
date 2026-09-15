@@ -301,3 +301,10 @@ A leitura:
 - usa o total da linha e o preço final como conferência da quantidade;
 - confronta pequenas falhas de caracteres do OCR com os EANs existentes na base;
 - junta todas as fotos carregadas antes da prévia e da exportação.
+
+
+### Correção do fundo cinza nas fotos
+
+Em fotos feitas sobre mesa ou superfície escura, a remoção da grade deve considerar somente pixels muito escuros. O fundo cinza não pode ser interpretado como uma linha da tabela, pois isso apagava a imagem antes do OCR.
+
+Páginas seguintes da Adega Brasil podem não repetir o nome da empresa. O leitor também identifica o modelo pelo padrão de embalagem, como 01X500ML, junto das linhas de produto.
