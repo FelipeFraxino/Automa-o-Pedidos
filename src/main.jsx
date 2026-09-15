@@ -481,9 +481,7 @@ function App({ session }) {
       .sort((a, b) => (order[a.Industria] ?? 3) - (order[b.Industria] ?? 3))
   }, [orderDetails, catalogIndustries])
 
-  const completeItems = useMemo(() => detailedPreview
-    .filter(item => ['RECKITT', 'LOREAL', '3M'].includes(item.Industria)),
-  [detailedPreview])
+  const completeItems = useMemo(() => detailedPreview, [detailedPreview])
 
   useEffect(() => {
     let active = true
@@ -542,6 +540,47 @@ function App({ session }) {
     localStorage.setItem('cbn-models', JSON.stringify(next.filter(model => !model.fixed || model.eanColumn || model.quantityColumn)))
   }
 
+  const registerNewCatalogItems = async rows => {
+    const candidates = rows.filter(item => item.EAN && !catalogIndustries[item.EAN])
+    if (!candidates.length) return
+
+    const eansToCheck = [...new Set(candidates.flatMap(item => {
+      const values = [item.EAN]
+      if (item.EAN.length === 13 && item.EAN.startsWith('0')) values.push(item.EAN.slice(1))
+      return values
+    }))]
+    const { data: existing } = await supabase
+      .from('catalogo_produtos')
+      .select('ean')
+      .eq('user_id', session.user.id)
+      .in('ean', eansToCheck)
+
+    const existingEans = new Set((existing || []).flatMap(item => [item.ean, item.ean?.length === 12 ? `0${item.ean}` : item.ean]))
+    const newItems = candidates
+      .filter(item => !existingEans.has(item.EAN))
+      .map(item => ({
+        user_id: session.user.id,
+        codigo_cbn: `AUTO-${item.EAN}`,
+        produto: item.Item || 'Item novo para revisar',
+        ean: item.EAN,
+        industria: inferIndustryFromItem(item.Item),
+        tipo_registro: 'A_REVISAR',
+        validado: false,
+        origem: 'Leitura automática — pendente de conferência',
+      }))
+
+    if (newItems.length) {
+      await supabase.from('catalogo_produtos').upsert(newItems, {
+        onConflict: 'user_id,codigo_cbn,ean',
+        ignoreDuplicates: true,
+      })
+      setCatalogIndustries(previous => ({
+        ...previous,
+        ...Object.fromEntries(newItems.map(item => [item.ean, item.industria])),
+      }))
+    }
+  }
+
   const readFile = async file => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
@@ -555,6 +594,7 @@ function App({ session }) {
         const text = await recognizeImage(file)
         const rows = parseVariableText(text)
         if (!rows.length) throw new Error('A imagem foi lida, mas o formato da tabela ainda não foi reconhecido. O problema está no leitor, não na qualidade da foto.')
+        await registerNewCatalogItems(rows)
         const imageModelId = selectedId === 'dalpar' ? 'dalpar' : 'personalizado'
         setSelectedId(imageModelId)
         setOrderDetails(rows)
@@ -585,6 +625,7 @@ function App({ session }) {
           modelId = 'personalizado'
           if (!rows.length) throw pdfError
         }
+        await registerNewCatalogItems(rows)
         setSelectedId(modelId)
         setOrderDetails(rows)
         setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
@@ -692,6 +733,7 @@ function App({ session }) {
       { code: 'RECKITT', label: 'RECKITT' },
       { code: 'LOREAL', label: "L'ORÉAL" },
       { code: '3M', label: '3M' },
+      { code: 'NAO_IDENTIFICADA', label: 'ITENS NOVOS / A REVISAR' },
     ]
     const sheetRows = [['EAN', 'Item', 'Quantidade', 'Valor total do item']]
     const sectionRows = []
@@ -717,16 +759,19 @@ function App({ session }) {
       RECKITT: completeItems.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
       LOREAL: completeItems.filter(item => item.Industria === 'LOREAL').reduce((sum, item) => sum + item.ValorTotal, 0),
       '3M': completeItems.filter(item => item.Industria === '3M').reduce((sum, item) => sum + item.ValorTotal, 0),
+      A_REVISAR: completeItems.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + item.ValorTotal, 0),
     }
+    const grandTotal = completeItems.reduce((sum, item) => sum + item.ValorTotal, 0)
     XLSX.utils.sheet_add_aoa(sheet, [
       ['RESUMO DO PEDIDO', 'Valor'],
       ['Reckitt', totals.RECKITT],
       ["L'Oréal", totals.LOREAL],
       ['3M', totals['3M']],
-      ['TOTAL DO PEDIDO', totals.RECKITT + totals.LOREAL + totals['3M']],
+      ['Itens novos / a revisar', totals.A_REVISAR],
+      ['TOTAL DO PEDIDO', grandTotal],
     ], { origin: 'E1' })
 
-    for (const cell of ['F2', 'F3', 'F4', 'F5']) {
+    for (const cell of ['F2', 'F3', 'F4', 'F5', 'F6']) {
       if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
     }
 
