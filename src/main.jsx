@@ -182,6 +182,13 @@ const readPdfOrder = async file => {
   return { modelId, rows: results }
 }
 
+const cleanOcrEan = value => {
+  const digits = cleanEan(value)
+  // Em algumas tabelas o OCR lê 789... como 79... e elimina o 8.
+  if (digits.length === 12 && digits.startsWith('79')) return `78${digits.slice(1)}`
+  return digits
+}
+
 const parseVariableText = text => {
   const normalizedDocument = normalize(text)
   const multiplyPackage = normalizedDocument.includes('sugestao de pedido') ||
@@ -196,7 +203,7 @@ const parseVariableText = text => {
     const candidates = [...cleanedLine.matchAll(/\d{8,14}/g)]
     const eanMatch = candidates.find(match => match[0].length >= 12) || candidates[0]
     if (!eanMatch) continue
-    const EAN = cleanEan(eanMatch[0])
+    const EAN = cleanOcrEan(eanMatch[0])
     const tail = cleanedLine.slice((eanMatch.index || 0) + eanMatch[0].length)
     const numbers = [...tail.matchAll(/\d+(?:[.,]\d+)?/g)]
     const required = multiplyPackage ? 4 : 3
@@ -219,20 +226,19 @@ const parseVariableText = text => {
     }
   }
 
-  if (!results.size) {
-    const compactText = text.replace(/\s+/g, ' ')
-    const rowPattern = /(\d{12,14})\s+(.{3,180}?)\s+(\d{1,3}[.,]\d{3})\s+(\d{1,4}[.,]\d{3,4})\s+(\d{1,3}(?:\.\d{3})*[.,]\d{2})/g
-    for (const match of compactText.matchAll(rowPattern)) {
-      const EAN = cleanEan(match[1])
-      const Quantidade = parsePdfNumber(match[3])
-      if (!EAN || !Quantidade) continue
-      results.set(EAN, {
-        EAN,
-        Item: match[2].replace(/[|\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim(),
-        Quantidade,
-        ValorTotal: parsePdfMoney(match[5]),
-      })
-    }
+  // A leitura compacta sempre roda para recuperar linhas que o OCR separou pela grade.
+  const compactText = text.replace(/\s+/g, ' ')
+  const rowPattern = /(\d{12,14})[\s|\[\]_]+(.{3,220}?)[\s|\[\]_]+(\d{1,3}[.,]\d{3})[\s|\[\]_]+(\d{1,4}[.,]\d{3,4})[\s|\[\]_]+(\d{1,3}(?:\.\d{3})*[.,]\d{2})/g
+  for (const match of compactText.matchAll(rowPattern)) {
+    const EAN = cleanOcrEan(match[1])
+    const Quantidade = parsePdfNumber(match[3])
+    if (!EAN || !Quantidade) continue
+    results.set(EAN, {
+      EAN,
+      Item: match[2].replace(/[|\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim(),
+      Quantidade,
+      ValorTotal: parsePdfMoney(match[5]),
+    })
   }
 
   return [...results.values()]
