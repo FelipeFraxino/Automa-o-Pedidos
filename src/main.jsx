@@ -479,13 +479,26 @@ function App({ session }) {
       return
     }
 
-    const itemRows = completeItems.map(item => ({
-      EAN: item.EAN,
-      Item: item.Item,
-      Quantidade: item.Quantidade,
-    }))
-    const sheet = XLSX.utils.json_to_sheet(itemRows, { header: ['EAN', 'Item', 'Quantidade'] })
+    const groups = [
+      { code: 'RECKITT', label: 'RECKITT' },
+      { code: 'LOREAL', label: "L'ORÉAL" },
+      { code: '3M', label: '3M' },
+    ]
+    const sheetRows = [['EAN', 'Item', 'Quantidade']]
+    const sectionRows = []
+
+    for (const group of groups) {
+      if (sheetRows.length > 1) sheetRows.push(['', '', ''])
+      sectionRows.push(sheetRows.length)
+      sheetRows.push([group.label, '', ''])
+      for (const item of completeItems.filter(product => product.Industria === group.code)) {
+        sheetRows.push([item.EAN, item.Item, item.Quantidade])
+      }
+    }
+
+    const sheet = XLSX.utils.aoa_to_sheet(sheetRows)
     sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 14 }, { wch: 3 }, { wch: 22 }, { wch: 16 }]
+    sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 2 } }))
 
     const totals = {
       RECKITT: completeItems.filter(item => item.Industria === 'RECKITT').reduce((sum, item) => sum + item.ValorTotal, 0),
