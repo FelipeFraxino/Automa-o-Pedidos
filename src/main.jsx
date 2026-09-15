@@ -144,7 +144,7 @@ const readPdfOrder = async file => {
       const eanItem = line.items[eanIndex]
 
       const numericAfterItems = line.items
-        .filter(item => item.x > eanItem.x + 8 && /^\d+(?:[.,]\d+)?$/.test(item.text))
+        .filter(item => item.x > eanItem.x + 8 && /^\d[\d.,]*$/.test(item.text))
       const numericAfter = numericAfterItems
         .map(item => parsePdfNumber(item.text))
         .filter(value => value !== null)
@@ -188,7 +188,9 @@ const readPdfOrder = async file => {
 
   for (const item of seen.values()) results.push(item)
   if (!results.length) throw new Error('Não encontrei itens válidos neste PDF. O arquivo precisa de revisão.')
-  return { modelId, rows: results }
+  const printedTotalMatch = fullText.match(/Vl\s*Total\s*\$?\s*([\d.,]+)/i)
+  const documentTotal = printedTotalMatch ? parsePdfMoney(printedTotalMatch[1]) : 0
+  return { modelId, rows: results, documentTotal }
 }
 
 const cleanOcrEan = value => {
@@ -513,6 +515,7 @@ function App({ session }) {
   const [fileName, setFileName] = useState('')
   const [workbookRows, setWorkbookRows] = useState([])
   const [orderDetails, setOrderDetails] = useState([])
+  const [sourceOrderTotal, setSourceOrderTotal] = useState(0)
   const [sheetName, setSheetName] = useState('')
   const [headerRow, setHeaderRow] = useState(1)
   const [eanColumn, setEanColumn] = useState('')
@@ -753,6 +756,7 @@ function App({ session }) {
         await registerNewCatalogItems(rows)
         const imageModelId = selectedId === 'dalpar' ? 'dalpar' : 'personalizado'
         setSelectedId(imageModelId)
+        setSourceOrderTotal(0)
         setOrderDetails(rows)
         setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
         setFileName(file.name)
@@ -770,10 +774,12 @@ function App({ session }) {
         setMessage({ type: 'success', text: 'Lendo e identificando o PDF…' })
         let modelId
         let rows
+        let documentTotal = 0
         try {
           const parsed = await readPdfOrder(file)
           modelId = parsed.modelId
           rows = parsed.rows
+          documentTotal = parsed.documentTotal || 0
         } catch (pdfError) {
           setMessage({ type: 'success', text: 'PDF escaneado detectado. Iniciando OCR…' })
           const text = await recognizeScannedPdf(file)
@@ -783,6 +789,7 @@ function App({ session }) {
         }
         await registerNewCatalogItems(rows)
         setSelectedId(modelId)
+        setSourceOrderTotal(documentTotal)
         setOrderDetails(rows)
         setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
         setFileName(file.name)
@@ -801,6 +808,7 @@ function App({ session }) {
       const firstSheet = workbook.SheetNames[0]
       const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], { header: 1, defval: '', raw: false })
       setOrderDetails([])
+      setSourceOrderTotal(0)
       setWorkbookRows(rows)
       setFileName(file.name)
       setSheetName(firstSheet)
@@ -917,17 +925,22 @@ function App({ session }) {
       '3M': completeItems.filter(item => item.Industria === '3M').reduce((sum, item) => sum + item.ValorTotal, 0),
       A_REVISAR: completeItems.filter(item => item.Industria === 'NAO_IDENTIFICADA').reduce((sum, item) => sum + item.ValorTotal, 0),
     }
-    const grandTotal = completeItems.reduce((sum, item) => sum + item.ValorTotal, 0)
-    XLSX.utils.sheet_add_aoa(sheet, [
+    const itemsTotal = completeItems.reduce((sum, item) => sum + item.ValorTotal, 0)
+    const grandTotal = sourceOrderTotal || itemsTotal
+    const documentAdjustment = sourceOrderTotal ? sourceOrderTotal - itemsTotal : 0
+    const summaryRows = [
       ['RESUMO DO PEDIDO', 'Valor'],
       ['Reckitt', totals.RECKITT],
       ["L'Oréal", totals.LOREAL],
       ['3M', totals['3M']],
       ['Itens novos / a revisar', totals.A_REVISAR],
-      ['TOTAL DO PEDIDO', grandTotal],
-    ], { origin: 'E1' })
+    ]
+    if (Math.abs(documentAdjustment) >= 0.005) summaryRows.push(['Ajuste conforme total impresso no documento', documentAdjustment])
+    summaryRows.push(['TOTAL DO PEDIDO', grandTotal])
+    XLSX.utils.sheet_add_aoa(sheet, summaryRows, { origin: 'E1' })
 
-    for (const cell of ['F2', 'F3', 'F4', 'F5', 'F6']) {
+    for (let row = 2; row <= summaryRows.length; row += 1) {
+      const cell = `F${row}`
       if (sheet[cell]) sheet[cell].z = 'R$ #,##0.00'
     }
 
@@ -1099,6 +1112,7 @@ function App({ session }) {
   const resetFile = () => {
     setWorkbookRows([])
     setOrderDetails([])
+    setSourceOrderTotal(0)
     setFileName('')
     setSheetName('')
     setEanColumn(selected.eanColumn || '')
