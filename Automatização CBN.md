@@ -176,7 +176,11 @@ A saída completa deve:
 - identificar e agrupar Reckitt, L'Oréal e 3M;
 - manter as colunas EAN, Item, Quantidade e Valor total do item;
 - mostrar os valores por indústria e o valor total do pedido;
-- exigir conferência quando a entrada for lida por OCR.
+- exigir conferência quando a entrada for lida por OCR;
+- nunca excluir um item novo ou não identificado do pedido completo;
+- colocar itens sem classificação no bloco “Itens novos / a revisar”;
+- incluir o valor desses itens no total geral;
+- cadastrar novos EANs automaticamente no Supabase como “A revisar”, sem validá-los definitivamente.
 
 ## Regra de atualização dos modelos
 
