@@ -366,7 +366,7 @@ const parseSpreadsheetOrder = async file => {
     const headers = rawRows[rowIndex].map(normalize)
     let score = 0
     if (headers.some(value => /ean|cod.*barra|cód.*barra|gtin/.test(value))) score += 5
-    if (headers.some(value => /quant|qtd|qtde/.test(value))) score += 4
+    if (headers.some(value => /quant|qtd|qtde|pedido.*und/.test(value))) score += 4
     if (headers.some(value => /descr|item|produto/.test(value))) score += 2
     if (headers.some(value => /total|valor pedido|vl pedido/.test(value))) score += 2
     if (score > bestScore) {
@@ -378,11 +378,12 @@ const parseSpreadsheetOrder = async file => {
   if (bestHeader < 0 || bestScore < 7) throw new Error('Não encontrei as colunas de EAN e quantidade neste arquivo.')
   const headers = rawRows[bestHeader].map(value => String(value || '').trim())
   const eanIndex = headers.findIndex(value => /ean|cod.*barra|cód.*barra|gtin/.test(normalize(value)))
-  const quantityIndex = headers.findIndex(value => /quant|qtd|qtde/.test(normalize(value)))
+  const quantityIndex = headers.findIndex(value => /quant|qtd|qtde|pedido.*und/.test(normalize(value)))
   const itemIndex = headers.findIndex(value => /descr|item|produto/.test(normalize(value)))
   const packageIndex = headers.findIndex(value => /^emb|embalagem/.test(normalize(value)))
   const totalIndex = headers.findIndex(value => /(^|\s)(vl\.?\s*)?total|valor pedido/.test(normalize(value)))
-  const unitIndex = headers.findIndex(value => /unit|vlr\.?$|valor$|preco|preço/.test(normalize(value)))
+  const unitIndex = headers.findIndex(value => /unit|vlr\.?$|valor$|preco|preço|^cbn$/.test(normalize(value)))
+  if (eanIndex < 0 || quantityIndex < 0) throw new Error('Não encontrei as colunas de EAN e quantidade neste arquivo.')
   const shouldMultiply = packageIndex >= 0 && quantityIndex >= 0 &&
     headers.some(value => /sugestao|sugestão/.test(normalize(value))) ||
     (packageIndex >= 0 && normalize(headers[quantityIndex]).includes('qtde'))
