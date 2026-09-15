@@ -178,6 +178,22 @@ A saída completa deve:
 - mostrar os valores por indústria e o valor total do pedido;
 - exigir conferência quando a entrada for lida por OCR.
 
+## Regra de atualização dos modelos
+
+Toda melhoria geral implementada em qualquer modelo deve ser incluída também no Modelo variável.
+
+Quando um erro for identificado no Modelo variável, a correção deve ser analisada e aplicada aos modelos específicos que utilizem a mesma regra, incluindo Piraquara, Ouro Branco, WG Adega Brasil, Dalpar e Flex CBN.
+
+As correções devem preservar as particularidades de cada cliente. Uma regra específica, como multiplicação de embalagem no Ouro Branco, não deve ser aplicada aos demais modelos sem correspondência.
+
+Após cada alteração:
+
+1. atualizar o código dos modelos aplicáveis;
+2. testar o modelo onde o erro apareceu;
+3. verificar os demais modelos afetados;
+4. atualizar este arquivo de andamento;
+5. confirmar a publicação no GitHub Pages.
+
 ## Futuro módulo de análise de MSL
 
 O sistema deverá confrontar a planilha de metas de MSL com a planilha de levantamento/venda do cliente.
