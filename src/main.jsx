@@ -6,7 +6,7 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createWorker, PSM } from 'tesseract.js'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
-  CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail
+  CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail, KeyRound
 } from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
@@ -353,12 +353,28 @@ const recognizeScannedPdf = async file => {
 
 function LoginScreen() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [sent, setSent] = useState(false)
   const [error, setError] = useState('')
   const [sending, setSending] = useState(false)
 
-  const requestLink = async event => {
+  const signInWithPassword = async event => {
     event.preventDefault()
+    setSending(true)
+    setError('')
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    setSending(false)
+    if (authError) {
+      const invalid = /invalid login credentials|email not confirmed/i.test(authError.message || '')
+      setError(invalid ? 'E-mail ou senha incorretos.' : 'Não foi possível entrar agora. Tente novamente.')
+    }
+  }
+
+  const requestLink = async () => {
+    if (!email) {
+      setError('Informe seu e-mail para receber o link de recuperação.')
+      return
+    }
     setSending(true)
     setError('')
     const { error: authError } = await supabase.auth.signInWithOtp({
@@ -371,7 +387,7 @@ function LoginScreen() {
       setError(
         rateLimited
           ? 'Foram solicitados vários links em pouco tempo. Aguarde alguns minutos e tente novamente apenas uma vez.'
-          : 'Não foi possível enviar o acesso agora. Verifique a configuração do e-mail no Supabase e tente novamente.'
+          : 'Não foi possível enviar o link de recuperação agora.'
       )
       return
     }
@@ -386,21 +402,25 @@ function LoginScreen() {
         <h1>Acesse o conversor</h1>
         {!sent ? (
           <>
-            <span>Informe seu e-mail. Você receberá um link seguro para entrar, sem senha.</span>
-            <form onSubmit={requestLink}>
+            <span>Entre com seu e-mail e sua senha.</span>
+            <form onSubmit={signInWithPassword}>
               <label>E-mail
-                <div className="email-field"><Mail size={18} /><input type="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="seuemail@exemplo.com" /></div>
+                <div className="email-field"><Mail size={18} /><input type="email" autoComplete="email" required value={email} onChange={event => setEmail(event.target.value)} placeholder="seuemail@exemplo.com" /></div>
+              </label>
+              <label>Senha
+                <div className="email-field"><KeyRound size={18} /><input type="password" autoComplete="current-password" required value={password} onChange={event => setPassword(event.target.value)} placeholder="Sua senha" /></div>
               </label>
               {error && <div className="login-error">{error}</div>}
-              <button disabled={sending}>{sending ? 'Enviando…' : 'Enviar acesso por e-mail'}</button>
+              <button disabled={sending}>{sending ? 'Entrando…' : 'Entrar'}</button>
+              <button className="login-link-button" type="button" disabled={sending} onClick={requestLink}>Esqueci a senha ou preciso de um link</button>
             </form>
           </>
         ) : (
           <div className="login-sent">
             <CheckCircle2 size={32} />
             <strong>Confira seu e-mail</strong>
-            <span>Enviamos o link de acesso para {email}.</span>
-            <button onClick={() => setSent(false)}>Usar outro e-mail</button>
+            <span>Enviamos um link de recuperação para {email}.</span>
+            <button onClick={() => setSent(false)}>Voltar para entrar com senha</button>
           </div>
         )}
       </section>
@@ -447,6 +467,11 @@ function App({ session }) {
   const [message, setMessage] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef(null)
+  const [showPasswordSetup, setShowPasswordSetup] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [passwordMessage, setPasswordMessage] = useState(null)
+  const [savingPassword, setSavingPassword] = useState(false)
 
   const selected = models.find(model => model.id === selectedId) || models[0]
   const headers = workbookRows[Math.max(0, headerRow - 1)]?.map((value, index) => String(value || `Coluna ${index + 1}`).trim()) || []
@@ -782,6 +807,31 @@ function App({ session }) {
     setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens e resumo de valores.` })
   }
 
+  const savePassword = async event => {
+    event.preventDefault()
+    setPasswordMessage(null)
+    if (newPassword.length < 8) {
+      setPasswordMessage({ type: 'error', text: 'Use uma senha com pelo menos 8 caracteres.' })
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      setPasswordMessage({ type: 'error', text: 'As duas senhas precisam ser iguais.' })
+      return
+    }
+
+    setSavingPassword(true)
+    const { error: authError } = await supabase.auth.updateUser({ password: newPassword })
+    setSavingPassword(false)
+    if (authError) {
+      setPasswordMessage({ type: 'error', text: 'Não foi possível salvar a senha. Tente novamente.' })
+      return
+    }
+
+    setNewPassword('')
+    setConfirmPassword('')
+    setPasswordMessage({ type: 'success', text: 'Senha criada com sucesso. Agora você pode entrar com e-mail e senha.' })
+  }
+
   const resetFile = () => {
     setWorkbookRows([])
     setOrderDetails([])
@@ -833,6 +883,7 @@ function App({ session }) {
             <span>{selected.description}</span>
           </div>
 <div className="top-actions">
+            <button className="ghost-button" onClick={() => { setPasswordMessage(null); setShowPasswordSetup(true) }}><KeyRound size={17} /> Criar/alterar senha</button>
             <button className="ghost-button" onClick={saveCurrentModel}><Settings2 size={17} /> Salvar configuração</button>
             <button className="ghost-button" onClick={() => supabase.auth.signOut()} title={session.user.email}><LogOut size={17} /> Sair</button>
           </div>
@@ -978,6 +1029,28 @@ function App({ session }) {
           )}
         </section>
       </main>
+      {showPasswordSetup && (
+        <div className="modal-backdrop">
+          <section className="password-modal" role="dialog" aria-modal="true" aria-labelledby="password-title">
+            <div className="password-modal-icon"><KeyRound size={24} /></div>
+            <h2 id="password-title">Criar ou alterar senha</h2>
+            <p>Defina uma senha com pelo menos 8 caracteres. Ela será usada junto com o e-mail <strong>{session.user.email}</strong>.</p>
+            <form onSubmit={savePassword}>
+              <label>Nova senha
+                <input type="password" autoComplete="new-password" minLength="8" required value={newPassword} onChange={event => setNewPassword(event.target.value)} />
+              </label>
+              <label>Confirmar nova senha
+                <input type="password" autoComplete="new-password" minLength="8" required value={confirmPassword} onChange={event => setConfirmPassword(event.target.value)} />
+              </label>
+              {passwordMessage && <div className={`password-feedback ${passwordMessage.type}`}>{passwordMessage.text}</div>}
+              <div className="modal-actions">
+                <button type="button" className="ghost-button" onClick={() => { setShowPasswordSetup(false); setNewPassword(''); setConfirmPassword(''); setPasswordMessage(null) }}>Fechar</button>
+                <button type="submit" className="primary-button" disabled={savingPassword}>{savingPassword ? 'Salvando…' : 'Salvar senha'}</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   )
 }
