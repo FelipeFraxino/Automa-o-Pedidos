@@ -253,3 +253,19 @@ No Confronto de arquivos, planilhas com os cabeçalhos abaixo devem ser reconhec
 - CBN: preço unitário.
 
 O valor total de cada item é calculado por PEDIDO EM UND × CBN. O arquivo real CBN (6).xlsx possui 32 itens válidos, 1.012 unidades e valor calculado de R$ 11.002,82.
+
+
+## Carregamento de múltiplos arquivos
+
+Todos os modelos aceitam vários arquivos no mesmo pedido.
+
+O usuário pode:
+
+- selecionar várias fotos, PDFs ou planilhas de uma vez;
+- carregar um arquivo inicialmente e usar “Adicionar mais arquivos”;
+- repetir a inclusão quantas vezes for necessário;
+- limpar o conjunto completo e começar novamente.
+
+Os arquivos são reunidos antes da prévia e da exportação. Quando o mesmo EAN aparece mais de uma vez, as quantidades e os valores são somados em uma única linha, preservando o código de barras exato.
+
+No Confronto de arquivos, o campo Orçamento e o campo Pedido aceitam múltiplos arquivos de forma independente. Todos os arquivos do Orçamento formam uma base única, e todos os arquivos do Pedido formam o pedido final único. O confronto, os valores por indústria, o total do pedido e o relatório de perda consideram o conjunto completo.
