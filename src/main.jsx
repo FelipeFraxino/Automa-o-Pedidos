@@ -219,7 +219,43 @@ const parseVariableText = text => {
     }
   }
 
+  if (!results.size) {
+    const compactText = text.replace(/\s+/g, ' ')
+    const rowPattern = /(\d{12,14})\s+(.{3,180}?)\s+(\d{1,3}[.,]\d{3})\s+(\d{1,4}[.,]\d{3,4})\s+(\d{1,3}(?:\.\d{3})*[.,]\d{2})/g
+    for (const match of compactText.matchAll(rowPattern)) {
+      const EAN = cleanEan(match[1])
+      const Quantidade = parsePdfNumber(match[3])
+      if (!EAN || !Quantidade) continue
+      results.set(EAN, {
+        EAN,
+        Item: match[2].replace(/[|\[\]_]+/g, ' ').replace(/\s+/g, ' ').trim(),
+        Quantidade,
+        ValorTotal: parsePdfMoney(match[5]),
+      })
+    }
+  }
+
   return [...results.values()]
+}
+
+const prepareImageForOcr = async source => {
+  if (!(source instanceof Blob) || !window.createImageBitmap) return source
+  try {
+    const bitmap = await window.createImageBitmap(source)
+    const scale = Math.max(1, Math.min(3, 2200 / bitmap.width))
+    const canvas = window.document.createElement('canvas')
+    canvas.width = Math.round(bitmap.width * scale)
+    canvas.height = Math.round(bitmap.height * scale)
+    const context = canvas.getContext('2d')
+    context.fillStyle = '#ffffff'
+    context.fillRect(0, 0, canvas.width, canvas.height)
+    context.filter = 'grayscale(1) contrast(1.35)'
+    context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
+    bitmap.close()
+    return canvas
+  } catch {
+    return source
+  }
 }
 
 const recognizeImage = async source => {
@@ -230,7 +266,8 @@ const recognizeImage = async source => {
       tessedit_pageseg_mode: PSM.AUTO,
       preserve_interword_spaces: '1',
     })
-    const { data } = await worker.recognize(source)
+    const preparedSource = await prepareImageForOcr(source)
+    const { data } = await worker.recognize(preparedSource)
     return data.text || ''
   } finally {
     await worker.terminate()
