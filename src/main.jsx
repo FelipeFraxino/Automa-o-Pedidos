@@ -238,20 +238,33 @@ const normalizeOcrDigitToken = value => String(value || '')
   .replace(/B/g, '8')
   .replace(/[^0-9]/g, '')
 
+const editDistance = (left, right) => {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let row = 1; row <= left.length; row += 1) {
+    const current = [row]
+    for (let column = 1; column <= right.length; column += 1) {
+      current[column] = Math.min(
+        current[column - 1] + 1,
+        previous[column] + 1,
+        previous[column - 1] + (left[row - 1] === right[column - 1] ? 0 : 1),
+      )
+    }
+    previous.splice(0, previous.length, ...current)
+  }
+  return previous[right.length]
+}
+
 const resolveOcrEan = (value, catalog = {}) => {
   const digits = normalizeOcrDigitToken(value)
   if (catalog[digits] || isValidEan13(digits)) return digits
 
   const candidates = [...new Set(Object.keys(catalog))]
-    .filter(ean => ean.length === digits.length && /^\d{8,14}$/.test(ean))
+    .filter(ean => Math.abs(ean.length - digits.length) <= 1 && /^\d{8,14}$/.test(ean))
   let best = null
   let bestDistance = Infinity
   let tied = false
   for (const candidate of candidates) {
-    let distance = 0
-    for (let index = 0; index < digits.length; index += 1) {
-      if (digits[index] !== candidate[index]) distance += 1
-    }
+    const distance = editDistance(digits, candidate)
     if (distance < bestDistance) {
       best = candidate
       bestDistance = distance
@@ -260,11 +273,37 @@ const resolveOcrEan = (value, catalog = {}) => {
       tied = true
     }
   }
-  if (best && !tied && bestDistance <= 2) return best
+  const allowedDistance = digits.length >= 12 ? 3 : 2
+  if (best && !tied && bestDistance <= allowedDistance) return best
   return digits
 }
 
 const cleanOcrEan = (value, catalog = {}) => resolveOcrEan(value, catalog)
+
+const mergeAdegaOcrRows = rows => {
+  const merged = new Map()
+  for (const item of rows) {
+    if (!item?.EAN) continue
+    const current = merged.get(item.EAN)
+    if (!current) {
+      merged.set(item.EAN, { ...item })
+      continue
+    }
+    const currentScore = (current.CodigoInterno ? 2 : 0) + (current.Item?.length || 0) + (current.ValorTotal > 0 ? 4 : 0)
+    const itemScore = (item.CodigoInterno ? 2 : 0) + (item.Item?.length || 0) + (item.ValorTotal > 0 ? 4 : 0)
+    const preferred = itemScore > currentScore ? item : current
+    merged.set(item.EAN, {
+      ...current,
+      ...preferred,
+      CodigoInterno: preferred.CodigoInterno || current.CodigoInterno || '',
+      Item: preferred.Item || current.Item,
+      Quantidade: Math.max(current.Quantidade || 0, item.Quantidade || 0),
+      ValorUnitario: preferred.ValorUnitario || current.ValorUnitario || 0,
+      ValorTotal: Math.max(current.ValorTotal || 0, item.ValorTotal || 0),
+    })
+  }
+  return [...merged.values()]
+}
 
 const parseAdegaText = (text, catalog = {}) => {
   const rows = []
@@ -313,7 +352,7 @@ const parseAdegaText = (text, catalog = {}) => {
 
     rows.push({ EAN, CodigoInterno, Item, Quantidade, ValorUnitario, ValorTotal })
   }
-  return mergeItemsByEan(rows)
+  return mergeAdegaOcrRows(rows)
 }
 
 const parseVariableText = (text, catalog = {}) => {
@@ -386,7 +425,7 @@ const prepareImageForOcr = async (source, rotation = 0) => {
     const sideways = Math.abs(rotation) % 180 === 90
     const rotatedWidth = sideways ? bitmap.height : bitmap.width
     const rotatedHeight = sideways ? bitmap.width : bitmap.height
-    const scale = Math.max(1, Math.min(3, 2400 / rotatedWidth))
+    const scale = Math.max(1.8, Math.min(2.5, 3600 / rotatedWidth))
     const canvas = window.document.createElement('canvas')
     canvas.width = Math.round(rotatedWidth * scale)
     canvas.height = Math.round(rotatedHeight * scale)
@@ -417,7 +456,7 @@ const prepareImageForOcr = async (source, rotation = 0) => {
     }
 
     for (let y = 0; y < canvas.height; y += 1) {
-      if (rowDark[y] / canvas.width <= 0.45) continue
+      if (rowDark[y] / canvas.width <= 0.65) continue
       for (let offset = -2; offset <= 2; offset += 1) {
         const target = y + offset
         if (target < 0 || target >= canvas.height) continue
@@ -428,7 +467,7 @@ const prepareImageForOcr = async (source, rotation = 0) => {
       }
     }
     for (let x = 0; x < canvas.width; x += 1) {
-      if (columnDark[x] / canvas.height <= 0.40) continue
+      if (columnDark[x] / canvas.height <= 0.60) continue
       for (let offset = -2; offset <= 2; offset += 1) {
         const target = x + offset
         if (target < 0 || target >= canvas.width) continue
@@ -475,7 +514,6 @@ const recognizeImage = async source => {
         bestScore = candidateScore
         bestSource = preparedSource
       }
-      if (candidateScore >= 18) break
     }
 
     if (uploadedImage) {
@@ -1668,6 +1706,23 @@ function App({ session }) {
                   )}
                 </div>
                 {orderDetails.length > 12 && <div className="more-rows">Mais {orderDetails.length - 12} itens foram lidos.</div>}
+                {orderDetails.length > 0 && (
+                  <div className="total-check">
+                    <label>
+                      Total líquido impresso no pedido (R$)
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="0.01"
+                        value={sourceOrderTotal || ''}
+                        placeholder="Ex.: 8541,18"
+                        onChange={event => setSourceOrderTotal(Number(event.target.value) || 0)}
+                      />
+                    </label>
+                    <span>O sistema tenta preencher automaticamente. Se o OCR errar algum dígito, este campo garante o total exato do documento.</span>
+                  </div>
+                )}
                 {!orderDetails.length && converted.length > 8 && <div className="more-rows">Mais {converted.length - 8} itens serão incluídos no arquivo.</div>}
               </div>
 
