@@ -284,3 +284,20 @@ Fluxo:
 5. conferir a prévia e baixar o resultado.
 
 Quando nenhum item é reconhecido, o sistema não pode mostrar uma confirmação verde. Deve apresentar uma mensagem de erro e manter os arquivos selecionados para nova tentativa ou ajuste do leitor. Ao usar “Adicionar mais arquivos”, os novos arquivos também aguardam a confirmação em “Processar arquivos”.
+
+
+## OCR de fotos giradas da Adega Brasil
+
+O Modelo variável e o modelo WG Adega Brasil devem aceitar fotos do pedido feitas de lado.
+
+A leitura:
+
+- testa automaticamente as orientações da imagem;
+- prioriza a posição que reconhece mais EANs e cabeçalhos;
+- remove linhas longas da grade antes do OCR;
+- executa duas formas de segmentação de texto na melhor orientação;
+- reconhece o padrão Cód. Barras, Descrição, Embalagem, Quantidade, P. Final e T. Líquido;
+- usa a quantidade direta, sem multiplicar pela embalagem;
+- usa o total da linha e o preço final como conferência da quantidade;
+- confronta pequenas falhas de caracteres do OCR com os EANs existentes na base;
+- junta todas as fotos carregadas antes da prévia e da exportação.
