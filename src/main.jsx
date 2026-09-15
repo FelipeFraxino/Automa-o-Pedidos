@@ -252,12 +252,57 @@ const prepareImageForOcr = async source => {
     const canvas = window.document.createElement('canvas')
     canvas.width = Math.round(bitmap.width * scale)
     canvas.height = Math.round(bitmap.height * scale)
-    const context = canvas.getContext('2d')
+    const context = canvas.getContext('2d', { willReadFrequently: true })
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
     context.filter = 'grayscale(1) contrast(1.35)'
     context.drawImage(bitmap, 0, 0, canvas.width, canvas.height)
     bitmap.close()
+
+    // Remove as linhas longas da grade sem apagar os números e textos.
+    const image = context.getImageData(0, 0, canvas.width, canvas.height)
+    const pixels = image.data
+    const rowDark = new Uint32Array(canvas.height)
+    const columnDark = new Uint32Array(canvas.width)
+
+    for (let y = 0; y < canvas.height; y += 1) {
+      for (let x = 0; x < canvas.width; x += 1) {
+        const index = (y * canvas.width + x) * 4
+        if (pixels[index] < 180) {
+          rowDark[y] += 1
+          columnDark[x] += 1
+        }
+      }
+    }
+
+    const eraseRow = y => {
+      for (let offset = -2; offset <= 2; offset += 1) {
+        const target = y + offset
+        if (target < 0 || target >= canvas.height) continue
+        for (let x = 0; x < canvas.width; x += 1) {
+          const index = (target * canvas.width + x) * 4
+          pixels[index] = pixels[index + 1] = pixels[index + 2] = 255
+        }
+      }
+    }
+    const eraseColumn = x => {
+      for (let offset = -2; offset <= 2; offset += 1) {
+        const target = x + offset
+        if (target < 0 || target >= canvas.width) continue
+        for (let y = 0; y < canvas.height; y += 1) {
+          const index = (y * canvas.width + target) * 4
+          pixels[index] = pixels[index + 1] = pixels[index + 2] = 255
+        }
+      }
+    }
+
+    for (let y = 0; y < canvas.height; y += 1) {
+      if (rowDark[y] / canvas.width > 0.45) eraseRow(y)
+    }
+    for (let x = 0; x < canvas.width; x += 1) {
+      if (columnDark[x] / canvas.height > 0.40) eraseColumn(x)
+    }
+    context.putImageData(image, 0, 0)
     return canvas
   } catch {
     return source
@@ -265,11 +310,11 @@ const prepareImageForOcr = async source => {
 }
 
 const recognizeImage = async source => {
-  // O inglês reconhece melhor grades, números, EANs e separadores neste tipo de relatório.
+  const uploadedImage = source instanceof Blob
   const worker = await createWorker('eng')
   try {
     await worker.setParameters({
-      tessedit_pageseg_mode: PSM.AUTO,
+      tessedit_pageseg_mode: uploadedImage ? PSM.SINGLE_BLOCK : PSM.AUTO,
       preserve_interword_spaces: '1',
     })
     const preparedSource = await prepareImageForOcr(source)
