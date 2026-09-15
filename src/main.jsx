@@ -229,6 +229,8 @@ function App({ session }) {
   const [quantityColumn, setQuantityColumn] = useState('')
   const [packageColumn, setPackageColumn] = useState('')
   const [quantityMode, setQuantityMode] = useState('direct')
+  const [outputIndustry, setOutputIndustry] = useState('RECKITT')
+  const [catalogIndustries, setCatalogIndustries] = useState({})
   const [message, setMessage] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileRef = useRef(null)
@@ -245,13 +247,50 @@ function App({ session }) {
     return workbookRows
       .slice(headerRow)
       .map(row => {
+        const EAN = cleanEan(row[eanIndex])
         const ordered = cleanQuantity(row[quantityIndex])
         const pack = quantityMode === 'multiply' ? cleanQuantity(row[packageIndex]) : 1
         const quantity = ordered !== null && pack !== null ? ordered * pack : null
-        return { EAN: cleanEan(row[eanIndex]), Quantidade: quantity }
+        return { EAN, Quantidade: quantity, Industria: catalogIndustries[EAN] || 'NAO_IDENTIFICADA' }
       })
-      .filter(item => item.EAN && item.Quantidade !== null && item.Quantidade !== 0)
-  }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, headers.join('|')])
+      .filter(item =>
+        item.EAN &&
+        item.Quantidade !== null &&
+        item.Quantidade !== 0 &&
+        (outputIndustry === 'TODAS' || item.Industria === outputIndustry)
+      )
+  }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, outputIndustry, catalogIndustries, headers.join('|')])
+
+  useEffect(() => {
+    let active = true
+
+    const loadCatalog = async () => {
+      const records = []
+      for (let start = 0; start < 2000; start += 1000) {
+        const { data, error } = await supabase
+          .from('catalogo_produtos')
+          .select('ean,industria')
+          .eq('user_id', session.user.id)
+          .range(start, start + 999)
+
+        if (error) {
+          if (active) setMessage({ type: 'error', text: 'Não foi possível carregar a separação por indústria.' })
+          return
+        }
+        records.push(...(data || []))
+        if (!data || data.length < 1000) break
+      }
+
+      if (active) {
+        setCatalogIndustries(Object.fromEntries(
+          records.filter(item => item.ean).map(item => [cleanEan(item.ean), item.industria])
+        ))
+      }
+    }
+
+    loadCatalog()
+    return () => { active = false }
+  }, [session.user.id])
 
   useEffect(() => {
     setHeaderRow(selected.headerRow || 1)
@@ -373,8 +412,9 @@ function App({ session }) {
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, sheet, 'Pedido')
     const baseName = fileName.replace(/\.[^.]+$/, '') || 'pedido'
-    XLSX.writeFile(workbook, `${baseName}_convertido.xlsx`)
-    setMessage({ type: 'success', text: `Planilha convertida com ${converted.length} itens.` })
+    const suffix = outputIndustry === 'RECKITT' ? 'reckitt_reppos' : outputIndustry.toLowerCase().replace(/[^a-z0-9]/g, '')
+    XLSX.writeFile(workbook, `${baseName}_${suffix}.xlsx`)
+    setMessage({ type: 'success', text: `Planilha convertida com ${converted.length} itens da indústria selecionada.` })
   }
 
   const resetFile = () => {
@@ -469,6 +509,14 @@ function App({ session }) {
                   <small>Detecção automática inicial</small>
                 </div>
                 <div className="field-grid">
+                  <label>Arquivo de saída
+                    <select value={outputIndustry} onChange={event => setOutputIndustry(event.target.value)}>
+                      <option value="RECKITT">Reckitt — sistema Reppos</option>
+                      <option value="LOREAL">L'Oréal</option>
+                      <option value="3M">3M</option>
+                      <option value="TODAS">Todas — somente conferência</option>
+                    </select>
+                  </label>
                   <label>Linha do cabeçalho
                     <input type="number" min="1" max={Math.max(1, workbookRows.length)} value={headerRow}
                       onChange={event => setHeaderRow(Math.max(1, Number(event.target.value)))} />
