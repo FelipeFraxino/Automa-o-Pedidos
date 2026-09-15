@@ -269,3 +269,18 @@ O usuário pode:
 Os arquivos são reunidos antes da prévia e da exportação. Quando o mesmo EAN aparece mais de uma vez, as quantidades e os valores são somados em uma única linha, preservando o código de barras exato.
 
 No Confronto de arquivos, o campo Orçamento e o campo Pedido aceitam múltiplos arquivos de forma independente. Todos os arquivos do Orçamento formam uma base única, e todos os arquivos do Pedido formam o pedido final único. O confronto, os valores por indústria, o total do pedido e o relatório de perda consideram o conjunto completo.
+
+
+## Etapa explícita de processamento
+
+Nos modelos de conversão, selecionar arquivos não executa mais o serviço imediatamente.
+
+Fluxo:
+
+1. selecionar ou arrastar um ou vários arquivos;
+2. conferir na tela os nomes dos arquivos selecionados;
+3. clicar em “Processar arquivos”;
+4. aguardar a leitura;
+5. conferir a prévia e baixar o resultado.
+
+Quando nenhum item é reconhecido, o sistema não pode mostrar uma confirmação verde. Deve apresentar uma mensagem de erro e manter os arquivos selecionados para nova tentativa ou ajuste do leitor. Ao usar “Adicionar mais arquivos”, os novos arquivos também aguardam a confirmação em “Processar arquivos”.
