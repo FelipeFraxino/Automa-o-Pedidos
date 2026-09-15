@@ -287,3 +287,44 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .file-card-actions { width: 100%; }
   .file-card-actions button { flex: 1; justify-content: center; }
 }
+
+
+.dropzone.has-pending-files { cursor: default; border-style: solid; border-color: #78b79a; }
+.pending-file-list {
+  width: min(560px, 82%);
+  max-height: 120px;
+  margin: 14px 0 18px;
+  padding: 12px;
+  overflow-y: auto;
+  border: 1px solid #dce7e1;
+  border-radius: 9px;
+  background: #f8fcfa;
+  display: grid;
+  gap: 6px;
+  text-align: left;
+}
+.pending-file-list span { color: #526d60; font-size: 11px; overflow-wrap: anywhere; }
+.pending-file-actions { display: flex; gap: 10px; }
+.dropzone .pending-file-actions button { margin-top: 0; padding: 12px 18px; border-radius: 9px; font-weight: 700; }
+.secondary-upload-button { color: #31566e !important; background: white !important; border: 1px solid #d5e0e7 !important; box-shadow: none !important; }
+.process-files-button { color: white; background: #ed6c2c; border: 0; box-shadow: 0 7px 18px rgba(237,108,44,.23); }
+.process-files-button:disabled { opacity: .55; cursor: wait; }
+.pending-processing-card {
+  padding: 16px 18px;
+  border: 1px solid #f0c5ae;
+  border-radius: 12px;
+  background: #fff9f5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+.pending-processing-card > div { min-width: 0; }
+.pending-processing-card strong, .pending-processing-card span { display: block; }
+.pending-processing-card strong { color: #71442e; font-size: 12px; }
+.pending-processing-card span { margin-top: 4px; color: #9a715c; font-size: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+@media (max-width: 800px) {
+  .pending-file-actions, .pending-processing-card { width: 100%; flex-direction: column; align-items: stretch; }
+  .pending-file-actions button, .pending-processing-card button { justify-content: center; }
+}
