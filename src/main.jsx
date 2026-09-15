@@ -622,6 +622,23 @@ function App({ session }) {
     return { pedido, excluidos }
   }, [budgetRows, comparisonOrderRows, catalogIndustries])
 
+  const comparisonLoss = useMemo(() => {
+    const groups = ['RECKITT', 'LOREAL', '3M', 'NAO_IDENTIFICADA']
+    const byIndustry = Object.fromEntries(groups.map(industry => {
+      const rows = comparisonResult.excluidos.filter(item => item.Industria === industry)
+      return [industry, {
+        quantidade: rows.reduce((sum, item) => sum + item.Quantidade, 0),
+        valor: rows.reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+        itens: rows.length,
+      }]
+    }))
+    return {
+      byIndustry,
+      quantidade: comparisonResult.excluidos.reduce((sum, item) => sum + item.Quantidade, 0),
+      valor: comparisonResult.excluidos.reduce((sum, item) => sum + (item.ValorTotal || 0), 0),
+    }
+  }, [comparisonResult])
+
   useEffect(() => {
     let active = true
 
@@ -1010,6 +1027,16 @@ function App({ session }) {
     }
     if (!excluidos.length) sheetRows.push(['Nenhum item excluído', '', '', '', ''])
 
+    sheetRows.push(['', '', '', '', ''])
+    sectionRows.push(sheetRows.length)
+    sheetRows.push(['RESUMO DA PERDA DO PEDIDO', '', '', '', ''])
+    sheetRows.push(['Indústria', 'Quantidade retirada', '', 'Valor perdido', ''])
+    for (const group of groups) {
+      const loss = comparisonLoss.byIndustry[group.code]
+      sheetRows.push([group.label, loss.quantidade, '', loss.valor, ''])
+    }
+    sheetRows.push(['TOTAL DA PERDA', comparisonLoss.quantidade, '', comparisonLoss.valor, ''])
+
     const sheet = XLSX.utils.aoa_to_sheet(sheetRows)
     sheet['!cols'] = [{ wch: 18 }, { wch: 58 }, { wch: 23 }, { wch: 22 }, { wch: 18 }, { wch: 18 }]
     sheet['!merges'] = sectionRows.map(row => ({ s: { r: row, c: 0 }, e: { r: row, c: 4 } }))
@@ -1185,6 +1212,24 @@ function App({ session }) {
                     </div>
                     <div className="comparison-excluded">
                       <h3>Itens excluídos do pedido <span>{comparisonResult.excluidos.length}</span></h3>
+                      <div className="loss-report">
+                        <div className="loss-total">
+                          <span>Perda total do pedido</span>
+                          <strong>{comparisonLoss.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                          <small>{comparisonLoss.quantidade} unidades retiradas</small>
+                        </div>
+                        {['RECKITT', 'LOREAL', '3M', 'NAO_IDENTIFICADA'].map(industry => {
+                          const loss = comparisonLoss.byIndustry[industry]
+                          const label = industry === 'LOREAL' ? "L'Oréal" : industry === 'NAO_IDENTIFICADA' ? 'A revisar' : industry
+                          return (
+                            <div key={industry}>
+                              <span>{label}</span>
+                              <strong>{loss.valor.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}</strong>
+                              <small>{loss.quantidade} unidades · {loss.itens} itens</small>
+                            </div>
+                          )
+                        })}
+                      </div>
                       <div className="table-wrap">
                         <table>
                           <thead><tr><th>EAN</th><th>Item</th><th>Quantidade no orçamento</th><th>Valor</th><th>Indústria</th></tr></thead>
