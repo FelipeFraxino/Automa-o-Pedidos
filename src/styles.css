@@ -328,3 +328,40 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .pending-file-actions, .pending-processing-card { width: 100%; flex-direction: column; align-items: stretch; }
   .pending-file-actions button, .pending-processing-card button { justify-content: center; }
 }
+
+
+.total-check {
+  display: flex;
+  align-items: end;
+  gap: 18px;
+  padding: 16px 18px;
+  margin: 14px 18px 18px;
+  border: 1px solid #f5b38f;
+  border-radius: 12px;
+  background: #fff8f4;
+}
+.total-check label {
+  display: grid;
+  gap: 7px;
+  min-width: 280px;
+  font-weight: 700;
+  color: #15324a;
+}
+.total-check input {
+  width: 100%;
+  border: 1px solid #cbd9e5;
+  border-radius: 9px;
+  padding: 11px 12px;
+  font: inherit;
+  background: #fff;
+}
+.total-check span {
+  color: #657d91;
+  font-size: 13px;
+  line-height: 1.45;
+  padding-bottom: 9px;
+}
+@media (max-width: 760px) {
+  .total-check { align-items: stretch; flex-direction: column; }
+  .total-check label { min-width: 0; }
+}
