@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as XLSX from 'xlsx'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
-import { createWorker } from 'tesseract.js'
+import { createWorker, PSM } from 'tesseract.js'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
   CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail
@@ -192,10 +192,12 @@ const parseVariableText = text => {
     const line = rawLine.replace(/\s+/g, ' ').trim()
     if (!line || normalize(line).includes('trocas pendentes')) break
 
-    const eanMatch = line.match(/\b\d{8,14}\b/)
+    const cleanedLine = line.replace(/[|\[\]_]/g, ' ')
+    const candidates = [...cleanedLine.matchAll(/\d{8,14}/g)]
+    const eanMatch = candidates.find(match => match[0].length >= 12) || candidates[0]
     if (!eanMatch) continue
     const EAN = cleanEan(eanMatch[0])
-    const tail = line.slice((eanMatch.index || 0) + eanMatch[0].length)
+    const tail = cleanedLine.slice((eanMatch.index || 0) + eanMatch[0].length)
     const numbers = [...tail.matchAll(/\d+(?:[.,]\d+)?/g)]
     const required = multiplyPackage ? 4 : 3
     if (numbers.length < required) continue
@@ -221,8 +223,13 @@ const parseVariableText = text => {
 }
 
 const recognizeImage = async source => {
-  const worker = await createWorker('por')
+  // O inglês reconhece melhor grades, números, EANs e separadores neste tipo de relatório.
+  const worker = await createWorker('eng')
   try {
+    await worker.setParameters({
+      tessedit_pageseg_mode: PSM.AUTO,
+      preserve_interword_spaces: '1',
+    })
     const { data } = await worker.recognize(source)
     return data.text || ''
   } finally {
@@ -445,7 +452,7 @@ function App({ session }) {
         setMessage({ type: 'success', text: 'Lendo a imagem por OCR. Isso pode levar alguns minutos…' })
         const text = await recognizeImage(file)
         const rows = parseVariableText(text)
-        if (!rows.length) throw new Error('Não consegui identificar os itens da imagem. Tente uma foto mais nítida e reta.')
+        if (!rows.length) throw new Error('A imagem foi lida, mas o formato da tabela ainda não foi reconhecido. O problema está no leitor, não na qualidade da foto.')
         setSelectedId('personalizado')
         setOrderDetails(rows)
         setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
