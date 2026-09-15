@@ -92,7 +92,9 @@ A comparação é feita pelo EAN exato, preservando todos os dígitos. O resulta
 - colunas EAN, Item, Quantidade, Valor total do item e Indústria;
 - resumo do valor de Reckitt, L'Oréal, 3M, itens a revisar e total geral do pedido;
 - seção “Itens excluídos do pedido” logo abaixo do pedido final;
-- quantidade e valor que cada item excluído possuía no orçamento.
+- quantidade e valor que cada item excluído possuía no orçamento;
+- relatório da perda por indústria, com quantidade retirada e valor perdido;
+- quantidade total retirada e valor total perdido do pedido.
 
 Quando o pedido não informa preço, o sistema calcula o valor usando o preço unitário identificado no orçamento. Um item é considerado excluído somente quando aparece no orçamento e não aparece no pedido. EANs novos presentes apenas no pedido permanecem na planilha e são marcados para revisão; eles nunca são descartados automaticamente.
 
@@ -130,7 +132,8 @@ Concluído:
 - mensagem mais clara para limite temporário de envio de e-mails;
 - prompt mestre e documentação inicial;
 - módulo “Confronto de arquivos” com campos separados para Orçamento e Pedido;
-- comparação por EAN exato, reaproveitamento do preço do orçamento quando o pedido não informa valor e exportação dos itens excluídos.
+- comparação por EAN exato, reaproveitamento do preço do orçamento quando o pedido não informa valor e exportação dos itens excluídos;
+- relatório de perda do pedido por indústria, com quantidade retirada e valor perdido, além dos totais gerais.
 
 Endereço da aplicação:
 
