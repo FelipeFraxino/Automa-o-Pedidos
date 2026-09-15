@@ -92,7 +92,7 @@ O repositório GitHub está público. Arquivos de clientes, base de produtos e d
 
 ## Situação atual
 
-Última atualização: 14 de setembro de 2026.
+Última atualização: 15 de setembro de 2026.
 
 Concluído:
 
@@ -112,7 +112,9 @@ Concluído:
 - conexão da aplicação com o Supabase;
 - importação privada dos 1.627 registros da base “códigos que trabalho”;
 - classificação inicial entre produtos válidos e códigos para revisão;
-- autenticação por link enviado ao e-mail;
+- autenticação principal por e-mail e senha;
+- criação e alteração de senha dentro da conta autenticada;
+- link por e-mail mantido somente como alternativa de recuperação;
 - endereço de retorno configurado para o GitHub Pages;
 - aplicação publicada no GitHub Pages;
 - mensagem mais clara para limite temporário de envio de e-mails;
@@ -124,8 +126,9 @@ Endereço da aplicação:
 
 Situação em teste:
 
-- primeiro acesso por e-mail;
-- limite temporário do provedor de e-mail gratuito do Supabase após várias solicitações.
+- definição da primeira senha pelo usuário dentro da sessão já autenticada;
+- novo acesso com e-mail e senha após encerrar a sessão;
+- link por e-mail reservado para recuperação de acesso.
 
 Próximas etapas:
 
