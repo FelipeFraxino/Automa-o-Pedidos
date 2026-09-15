@@ -29,26 +29,13 @@ const findSuggestedColumn = (headers, terms) => {
   return headers.find(header => normalizedTerms.some(term => normalize(header).includes(term))) ?? ''
 }
 
-const normalizeBarcodeLength = digits => {
-  // Alguns ERPs exibem o UPC-A de 12 dígitos preenchido como EAN-13.
-  // Quando aparecem dois zeros iniciais, apenas o primeiro é preenchimento.
-  if (digits.length === 13 && digits.startsWith('00')) return digits.slice(1)
-  return digits
-}
-
 const cleanEan = value => {
   if (value === null || value === undefined || value === '') return ''
-  if (typeof value === 'number') {
-    const digits = Number.isInteger(value) ? String(value) : String(Math.trunc(value))
-    return normalizeBarcodeLength(digits)
-  }
+  if (typeof value === 'number') return Number.isInteger(value) ? String(value) : String(Math.trunc(value))
   const text = String(value).trim()
   const exponential = text.match(/^([\d.,]+)e\+(\d+)$/i)
-  if (exponential) {
-    const digits = Number(text.replace(',', '.')).toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: 0 })
-    return normalizeBarcodeLength(digits)
-  }
-  return normalizeBarcodeLength(text.replace(/\.0+$/, '').replace(/[^0-9]/g, ''))
+  if (exponential) return Number(text.replace(',', '.')).toLocaleString('fullwide', { useGrouping: false, maximumFractionDigits: 0 })
+  return text.replace(/\.0+$/, '').replace(/[^0-9]/g, '')
 }
 
 const cleanQuantity = value => {
