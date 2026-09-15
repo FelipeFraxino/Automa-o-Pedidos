@@ -270,3 +270,20 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .loss-report { grid-template-columns: repeat(2, 1fr); }
   .loss-report .loss-total { grid-column: 1 / -1; }
 }
+
+
+.file-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.uploaded-file-names {
+  max-height: 54px;
+  overflow-y: auto;
+  line-height: 1.45;
+}
+@media (max-width: 800px) {
+  .file-card { align-items: flex-start; flex-wrap: wrap; }
+  .file-card-actions { width: 100%; }
+  .file-card-actions button { flex: 1; justify-content: center; }
+}
