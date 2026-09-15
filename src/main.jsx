@@ -25,6 +25,14 @@ const BASE_MODELS = [
 const normalize = value => String(value ?? '').trim().toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
 
+const inferIndustryFromItem = itemName => {
+  const item = normalize(itemName)
+  if (/scotch|ponjita|nexcare|post.?it|command|3m\b/.test(item)) return '3M'
+  if (/elseve|loreal|l'oreal|niely|garnier|maybelline/.test(item)) return 'LOREAL'
+  if (/veja|vanish|finish|harpic|sbp\b|lysoform|destac|repelex/.test(item)) return 'RECKITT'
+  return 'NAO_IDENTIFICADA'
+}
+
 const findSuggestedColumn = (headers, terms) => {
   const normalizedTerms = terms.map(normalize)
   return headers.find(header => normalizedTerms.some(term => normalize(header).includes(term))) ?? ''
@@ -469,7 +477,7 @@ function App({ session }) {
   const detailedPreview = useMemo(() => {
     const order = { RECKITT: 0, LOREAL: 1, '3M': 2, NAO_IDENTIFICADA: 3 }
     return orderDetails
-      .map(item => ({ ...item, Industria: catalogIndustries[item.EAN] || 'NAO_IDENTIFICADA' }))
+      .map(item => ({ ...item, Industria: catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item) }))
       .sort((a, b) => (order[a.Industria] ?? 3) - (order[b.Industria] ?? 3))
   }, [orderDetails, catalogIndustries])
 
@@ -663,7 +671,8 @@ function App({ session }) {
       setMessage({ type: 'error', text: 'Escolha as colunas de EAN e Quantidade antes de exportar.' })
       return
     }
-    const sheet = XLSX.utils.json_to_sheet(converted, { header: ['EAN', 'Quantidade'] })
+    const repposRows = converted.map(item => ({ EAN: item.EAN, Quantidade: item.Quantidade }))
+    const sheet = XLSX.utils.json_to_sheet(repposRows, { header: ['EAN', 'Quantidade'] })
     sheet['!cols'] = [{ wch: 18 }, { wch: 14 }]
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, sheet, 'Pedido')
