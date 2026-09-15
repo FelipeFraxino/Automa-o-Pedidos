@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import * as XLSX from 'xlsx'
 import * as pdfjsLib from 'pdfjs-dist'
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
+import { createWorker } from 'tesseract.js'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
   CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail
@@ -18,7 +19,7 @@ const BASE_MODELS = [
   { id: 'adega-brasil', name: 'WG Adega Brasil', description: 'Quantidade direta; embalagem é apenas a apresentação do produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
   { id: 'dalpar', name: 'Dalpar', description: 'Pedido recebido como imagem; separação por marca e produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
   { id: 'flex-cbn', name: 'Orçamento Flex CBN', description: 'Prefixos RB, LO e SB identificam a indústria', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
-  { id: 'personalizado', name: 'Modelo personalizado', description: 'Configure livremente para outras redes e clientes', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
+  { id: 'personalizado', name: 'Modelo variável', description: 'Leitura completa para Excel, PDF, foto ou print, com revisão antes da exportação', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
 ]
 
 const normalize = value => String(value ?? '').trim().toLowerCase()
@@ -179,6 +180,72 @@ const readPdfOrder = async file => {
   for (const item of seen.values()) results.push(item)
   if (!results.length) throw new Error('Não encontrei itens válidos neste PDF. O arquivo precisa de revisão.')
   return { modelId, rows: results }
+}
+
+const parseVariableText = text => {
+  const normalizedDocument = normalize(text)
+  const multiplyPackage = normalizedDocument.includes('sugestao de pedido') ||
+    (normalizedDocument.includes('emb') && normalizedDocument.includes('qtde'))
+  const results = new Map()
+
+  for (const rawLine of text.split(/\r?\n/)) {
+    const line = rawLine.replace(/\s+/g, ' ').trim()
+    if (!line || normalize(line).includes('trocas pendentes')) break
+
+    const eanMatch = line.match(/\b\d{8,14}\b/)
+    if (!eanMatch) continue
+    const EAN = cleanEan(eanMatch[0])
+    const tail = line.slice((eanMatch.index || 0) + eanMatch[0].length)
+    const numbers = [...tail.matchAll(/\d+(?:[.,]\d+)?/g)]
+    const required = multiplyPackage ? 4 : 3
+    if (numbers.length < required) continue
+
+    const quantityIndex = numbers.length - required
+    const ordered = parsePdfNumber(numbers[quantityIndex][0])
+    const pack = multiplyPackage ? parsePdfNumber(numbers[quantityIndex + 1][0]) : 1
+    const Quantidade = ordered && pack ? ordered * pack : null
+    if (!Quantidade) continue
+
+    const Item = tail.slice(0, numbers[quantityIndex].index).trim().replace(/^[-:;\s]+/, '') || 'Item para revisar'
+    const ValorTotal = parsePdfMoney(numbers.at(-1)[0])
+    const existing = results.get(EAN)
+    if (existing) {
+      existing.Quantidade += Quantidade
+      existing.ValorTotal += ValorTotal
+    } else {
+      results.set(EAN, { EAN, Item, Quantidade, ValorTotal })
+    }
+  }
+
+  return [...results.values()]
+}
+
+const recognizeImage = async source => {
+  const worker = await createWorker('por')
+  try {
+    const { data } = await worker.recognize(source)
+    return data.text || ''
+  } finally {
+    await worker.terminate()
+  }
+}
+
+const recognizeScannedPdf = async file => {
+  const data = new Uint8Array(await file.arrayBuffer())
+  const document = await pdfjsLib.getDocument({ data }).promise
+  let text = ''
+
+  for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber)
+    const viewport = page.getViewport({ scale: 2 })
+    const canvas = document.createElement('canvas')
+    canvas.width = viewport.width
+    canvas.height = viewport.height
+    const context = canvas.getContext('2d')
+    await page.render({ canvasContext: context, viewport }).promise
+    text += '\n' + await recognizeImage(canvas)
+  }
+  return text
 }
 
 function LoginScreen() {
@@ -369,14 +436,45 @@ function App({ session }) {
   const readFile = async file => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
-    if (!['xlsx', 'xls', 'csv', 'pdf'].includes(extension)) {
-      setMessage({ type: 'error', text: 'Use um arquivo Excel (.xlsx ou .xls), CSV ou PDF.' })
+    if (!['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
+      setMessage({ type: 'error', text: 'Use Excel, CSV, PDF, PNG, JPG ou WEBP.' })
       return
     }
     try {
+      if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
+        setMessage({ type: 'success', text: 'Lendo a imagem por OCR. Isso pode levar alguns minutos…' })
+        const text = await recognizeImage(file)
+        const rows = parseVariableText(text)
+        if (!rows.length) throw new Error('Não consegui identificar os itens da imagem. Tente uma foto mais nítida e reta.')
+        setSelectedId('personalizado')
+        setOrderDetails(rows)
+        setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
+        setFileName(file.name)
+        setSheetName('Imagem lida por OCR — revisar')
+        setHeaderRow(1)
+        setEanColumn('EAN')
+        setQuantityColumn('Quantidade')
+        setPackageColumn('')
+        setQuantityMode('direct')
+        setMessage({ type: 'success', text: `Imagem lida: ${rows.length} itens. Confira a prévia antes de baixar.` })
+        return
+      }
+
       if (extension === 'pdf') {
         setMessage({ type: 'success', text: 'Lendo e identificando o PDF…' })
-        const { modelId, rows } = await readPdfOrder(file)
+        let modelId
+        let rows
+        try {
+          const parsed = await readPdfOrder(file)
+          modelId = parsed.modelId
+          rows = parsed.rows
+        } catch (pdfError) {
+          setMessage({ type: 'success', text: 'PDF escaneado detectado. Iniciando OCR…' })
+          const text = await recognizeScannedPdf(file)
+          rows = parseVariableText(text)
+          modelId = 'personalizado'
+          if (!rows.length) throw pdfError
+        }
         setSelectedId(modelId)
         setOrderDetails(rows)
         setWorkbookRows([['EAN', 'Quantidade'], ...rows.map(row => [row.EAN, row.Quantidade])])
@@ -436,7 +534,7 @@ function App({ session }) {
     const model = {
       id: `personalizado-${Date.now()}`,
       name: name.trim(),
-      description: 'Modelo personalizado editável',
+      description: 'Modelo variável editável para outros clientes',
       headerRow: 1,
       eanColumn: '',
       quantityColumn: '',
@@ -600,11 +698,11 @@ function App({ session }) {
               onDrop={event => { event.preventDefault(); setIsDragging(false); readFile(event.dataTransfer.files[0]) }}
               onClick={() => fileRef.current?.click()}
             >
-              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf" onChange={event => readFile(event.target.files[0])} hidden />
+              <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => readFile(event.target.files[0])} hidden />
               <div className="upload-icon"><UploadCloud size={34} /></div>
               <h2>Envie a planilha do cliente</h2>
               <p>Arraste o arquivo para cá ou clique para escolher</p>
-              <span>Excel .xlsx, .xls, CSV ou PDF</span>
+              <span>Excel, CSV, PDF, foto ou print</span>
               <button>Selecionar arquivo</button>
             </div>
           ) : (
