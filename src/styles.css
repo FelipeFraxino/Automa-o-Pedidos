@@ -133,3 +133,54 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .top-actions { gap: 5px; }
   .login-card { padding: 30px 24px; }
 }
+
+
+.login-card form > .login-link-button {
+  color: #1d5d8d;
+  background: transparent;
+  border: 1px solid #d7e1e8;
+  box-shadow: none;
+}
+.login-card form > .login-link-button:hover { background: #f3f7fa; }
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  background: rgba(7, 30, 52, .68);
+  backdrop-filter: blur(3px);
+}
+.password-modal {
+  width: min(460px, 100%);
+  padding: 30px;
+  border-radius: 18px;
+  background: white;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, .3);
+}
+.password-modal-icon {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 16px;
+  border-radius: 13px;
+  color: white;
+  background: #f16f2e;
+}
+.password-modal h2 { margin: 0 0 8px; color: #173a54; font-size: 22px; }
+.password-modal > p { margin: 0 0 22px; color: #718696; font-size: 13px; line-height: 1.55; }
+.password-modal form { display: grid; gap: 15px; }
+.password-feedback { padding: 11px 12px; border-radius: 8px; font-size: 12px; }
+.password-feedback.error { color: #9d3935; background: #fff0ef; }
+.password-feedback.success { color: #176b4b; background: #eaf8f1; }
+.modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 3px; }
+.modal-actions .primary-button { justify-content: center; }
+
+@media (max-width: 800px) {
+  .password-modal { padding: 24px; }
+  .modal-actions { align-items: stretch; flex-direction: column-reverse; }
+  .modal-actions button { justify-content: center; }
+}
