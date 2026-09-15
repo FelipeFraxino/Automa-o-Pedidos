@@ -245,3 +245,28 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .comparison-summary { grid-template-columns: repeat(2, 1fr); }
   .comparison-summary .comparison-total { grid-column: 1 / -1; }
 }
+
+
+.loss-report {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 9px;
+  margin: 0 0 16px;
+}
+.loss-report > div {
+  padding: 13px;
+  border: 1px solid #f0d3d0;
+  border-radius: 10px;
+  background: #fff8f7;
+}
+.loss-report span, .loss-report strong, .loss-report small { display: block; }
+.loss-report span { color: #8d625e; font-size: 9px; }
+.loss-report strong { margin: 5px 0; color: #9d3935; font-size: 13px; }
+.loss-report small { color: #9a7773; font-size: 9px; }
+.loss-report .loss-total { color: white; border-color: #b4443e; background: #b4443e; }
+.loss-report .loss-total span, .loss-report .loss-total strong, .loss-report .loss-total small { color: white; }
+
+@media (max-width: 800px) {
+  .loss-report { grid-template-columns: repeat(2, 1fr); }
+  .loss-report .loss-total { grid-column: 1 / -1; }
+}
