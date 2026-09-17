@@ -349,3 +349,15 @@ Atualização de 17/09/2026:
 - a planilha completa do mesmo pedido usa `1483-16-pedido-completo.xlsx`;
 - o Reckitt/Reppos continua contendo exatamente as colunas `EAN` e `Quantidade`;
 - a leitura continua ignorando tudo após `TROCAS PENDENTES`.
+
+
+## Correção de quantidades com números na descrição
+
+Atualização de 17/09/2026:
+
+- no PDF da Rede Piraquara, a quantidade é lida exclusivamente pela posição da coluna `Qtde`;
+- números promocionais da descrição, embalagem ou nome do produto não podem ser usados como quantidade;
+- exemplos como `Leve 3 Pague 2`, `3x500 ml` ou `C/3 unidades` permanecem somente na descrição;
+- para o EAN `7891035560767`, quando o PDF mostrar `12` na coluna `Qtde`, o Reckitt/Reppos deve exportar `12`, nunca `3`;
+- a mesma regra vale quando um PDF Piraquara é processado pelo Modelo variável;
+- continuam preservadas as regras específicas: Piraquara usa quantidade direta, Ouro Branco usa Embalagem × Qtde e Adega Brasil usa quantidade direta.
