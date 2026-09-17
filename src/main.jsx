@@ -92,6 +92,19 @@ const extractPrintedDocumentTotal = text => {
   return values.length ? Math.max(...values) : 0
 }
 
+const extractPiraquaraStoreInfo = text => {
+  const destinationMatch = String(text || '').match(/\bDestino:\s*(\d{1,3})\b/i)
+  const cnpjMatch = String(text || '').match(/CNPJ\/CPF:\s*([\d./-]+)/i)
+  const cnpjDigits = (cnpjMatch?.[1] || '').replace(/\D/g, '')
+  const destinationNumber = Number(destinationMatch?.[1])
+  if (cnpjDigits.length !== 14 || !Number.isFinite(destinationNumber) || destinationNumber < 1) return null
+  return {
+    cnpjFinal: cnpjDigits.slice(-4),
+    loja: String(destinationNumber).padStart(2, '0'),
+    destinoOriginal: destinationMatch[1].padStart(3, '0'),
+  }
+}
+
 const groupPdfLines = items => {
   const lines = []
   for (const item of items.filter(entry => entry.str?.trim())) {
@@ -218,7 +231,8 @@ const readPdfOrder = async file => {
   const printedTotalMatch = fullText.match(/Vl\s*Total\s*\$?\s*([\d.,]+)/i)
   const documentTotal = extractPrintedDocumentTotal(fullText) ||
     (printedTotalMatch ? parsePdfMoney(printedTotalMatch[1]) : 0)
-  return { modelId, rows: results, documentTotal }
+  const storeInfo = modelId === 'piraquara' ? extractPiraquaraStoreInfo(fullText) : null
+  return { modelId, rows: results, documentTotal, storeInfo }
 }
 
 const isValidEan13 = ean => {
@@ -731,6 +745,7 @@ function App({ session }) {
   const [workbookRows, setWorkbookRows] = useState([])
   const [orderDetails, setOrderDetails] = useState([])
   const [sourceOrderTotal, setSourceOrderTotal] = useState(0)
+  const [piraquaraStoreInfo, setPiraquaraStoreInfo] = useState(null)
   const [sheetName, setSheetName] = useState('')
   const [headerRow, setHeaderRow] = useState(1)
   const [eanColumn, setEanColumn] = useState('')
@@ -999,11 +1014,13 @@ function App({ session }) {
         let modelId
         let rows
         let documentTotal = 0
+        let storeInfo = null
         try {
           const parsed = await readPdfOrder(file)
           modelId = parsed.modelId
           rows = parsed.rows
           documentTotal = parsed.documentTotal || 0
+          storeInfo = parsed.storeInfo || null
         } catch (pdfError) {
           setMessage({ type: 'success', text: `PDF escaneado detectado em ${file.name}. Iniciando OCR…` })
           const recognizedText = await recognizeScannedPdf(file)
@@ -1015,13 +1032,25 @@ function App({ session }) {
         await registerNewCatalogItems(rows)
         if (!append) setSelectedId(modelId)
         setSourceOrderTotal(previous => append ? previous + documentTotal : documentTotal)
+        setPiraquaraStoreInfo(previous => {
+          if (modelId !== 'piraquara') return append ? previous : null
+          if (!append) return storeInfo
+          if (!previous || !storeInfo) return previous || storeInfo
+          return previous.cnpjFinal === storeInfo.cnpjFinal && previous.loja === storeInfo.loja
+            ? previous
+            : { multiple: true }
+        })
         setOrderDetails(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
         setWorkbookRows(previous => {
           const added = rows.map(row => [row.EAN, row.Quantidade])
           return append && previous.length ? [previous[0], ...previous.slice(1), ...added] : [['EAN', 'Quantidade'], ...added]
         })
         setFileName(previous => addFileName(previous, file.name, append))
-        setSheetName('Pedidos extraídos de PDF')
+        setSheetName(
+          modelId === 'piraquara' && storeInfo
+            ? `Piraquara · CNPJ final ${storeInfo.cnpjFinal} · Loja ${storeInfo.loja}`
+            : 'Pedidos extraídos de PDF'
+        )
         setHeaderRow(1)
         setEanColumn('EAN')
         setQuantityColumn('Quantidade')
@@ -1152,8 +1181,18 @@ function App({ session }) {
     XLSX.utils.book_append_sheet(workbook, sheet, 'Pedido')
     const baseName = fileName.replace(/\.[^.]+$/, '') || 'pedido'
     const suffix = outputIndustry === 'RECKITT' ? 'reckitt_reppos' : outputIndustry.toLowerCase().replace(/[^a-z0-9]/g, '')
-    XLSX.writeFile(workbook, `${baseName}_${suffix}.xlsx`)
-    setMessage({ type: 'success', text: `Planilha convertida com ${converted.length} itens da indústria selecionada.` })
+    const isNamedPiraquaraReppos = selectedId === 'piraquara' &&
+      outputIndustry === 'RECKITT' &&
+      piraquaraStoreInfo &&
+      !piraquaraStoreInfo.multiple
+    const downloadName = isNamedPiraquaraReppos
+      ? `${piraquaraStoreInfo.cnpjFinal}-${piraquaraStoreInfo.loja}.xlsx`
+      : `${baseName}_${suffix}.xlsx`
+    XLSX.writeFile(workbook, downloadName)
+    setMessage({
+      type: 'success',
+      text: `Planilha ${downloadName} gerada com ${converted.length} itens da indústria selecionada.`,
+    })
   }
 
   const exportCompleteOrder = () => {
@@ -1221,7 +1260,10 @@ function App({ session }) {
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, sheet, 'Pedido completo')
     const baseName = fileName.replace(/\.[^.]+$/, '') || 'pedido'
-    XLSX.writeFile(workbook, `${baseName}_pedido_completo.xlsx`)
+    const completeBaseName = selectedId === 'piraquara' && piraquaraStoreInfo && !piraquaraStoreInfo.multiple
+      ? `${piraquaraStoreInfo.cnpjFinal}-${piraquaraStoreInfo.loja}`
+      : baseName
+    XLSX.writeFile(workbook, `${completeBaseName}-pedido-completo.xlsx`)
     setMessage({ type: 'success', text: `Pedido completo gerado com ${completeItems.length} itens. Total conferido: ${grandTotal.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}.` })
   }
 
@@ -1405,6 +1447,7 @@ function App({ session }) {
     setWorkbookRows([])
     setOrderDetails([])
     setSourceOrderTotal(0)
+    setPiraquaraStoreInfo(null)
     setFileName('')
     setSheetName('')
     setEanColumn(selected.eanColumn || '')
