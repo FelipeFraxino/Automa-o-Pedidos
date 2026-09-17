@@ -240,8 +240,13 @@ const readPdfOrder = async file => {
   for (const item of seen.values()) results.push(item)
   if (!results.length) throw new Error('Não encontrei itens válidos neste PDF. O arquivo precisa de revisão.')
   const printedTotalMatch = fullText.match(/Vl\s*Total\s*\$?\s*([\d.,]+)/i)
-  const documentTotal = extractPrintedDocumentTotal(fullText) ||
-    (printedTotalMatch ? parsePdfMoney(printedTotalMatch[1]) : 0)
+  const mainItemsTotal = Math.round(
+    results.reduce((sum, item) => sum + (item.ValorTotal || 0), 0) * 100
+  ) / 100
+  const documentTotal = modelId === 'piraquara'
+    ? mainItemsTotal
+    : extractPrintedDocumentTotal(fullText) ||
+      (printedTotalMatch ? parsePdfMoney(printedTotalMatch[1]) : 0)
   const storeInfo = modelId === 'piraquara' ? extractPiraquaraStoreInfo(fullText) : null
   return { modelId, rows: results, documentTotal, storeInfo }
 }
