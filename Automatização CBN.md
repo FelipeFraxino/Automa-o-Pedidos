@@ -334,3 +334,18 @@ Atualização de 15/09/2026:
 - a prévia possui o campo editável `Total líquido impresso no pedido (R$)`, preenchido automaticamente quando possível;
 - esse campo serve como conferência final quando o OCR confundir algum dígito do total;
 - para o pedido nº 208501, deve ser informado `8541,18` caso a leitura automática não preencha corretamente.
+
+
+## Nome automático dos arquivos da Rede Piraquara
+
+Atualização de 17/09/2026:
+
+- o leitor identifica o campo `Destino` no cabeçalho do PDF;
+- o leitor identifica o `CNPJ/CPF` da loja dentro de `Dados entrega`, e não o CNPJ da CBN;
+- o nome usa os quatro últimos dígitos numéricos do CNPJ da loja;
+- o destino é convertido para o número da loja com dois dígitos: `001 → 01`, `002 → 02`, `016 → 16`;
+- padrão do arquivo Reckitt/Reppos: `CCCC-LL.xlsx`, em que `CCCC` é o final do CNPJ e `LL` é a loja;
+- exemplo real: CNPJ `23.668.138/0014-83` e Destino `016` geram `1483-16.xlsx`;
+- a planilha completa do mesmo pedido usa `1483-16-pedido-completo.xlsx`;
+- o Reckitt/Reppos continua contendo exatamente as colunas `EAN` e `Quantidade`;
+- a leitura continua ignorando tudo após `TROCAS PENDENTES`.
