@@ -361,3 +361,15 @@ Atualização de 17/09/2026:
 - para o EAN `7891035560767`, quando o PDF mostrar `12` na coluna `Qtde`, o Reckitt/Reppos deve exportar `12`, nunca `3`;
 - a mesma regra vale quando um PDF Piraquara é processado pelo Modelo variável;
 - continuam preservadas as regras específicas: Piraquara usa quantidade direta, Ouro Branco usa Embalagem × Qtde e Adega Brasil usa quantidade direta.
+
+
+## Total líquido da Rede Piraquara sem Trocas Pendentes
+
+Atualização de 17/09/2026:
+
+- o total líquido do pedido Piraquara é calculado exclusivamente pela soma das linhas da tabela principal;
+- a leitura e a soma são encerradas antes do título `TROCAS PENDENTES`;
+- quantidades e valores da seção de trocas não entram no campo `Total líquido impresso no pedido`, na planilha completa nem no resumo por indústria;
+- no caso identificado, os 7 itens da tabela principal somam `R$ 478,89`;
+- o valor incorreto `R$ 898,48` incluía mais `R$ 419,59`, correspondente ao outro bloco de valores do documento;
+- após a correção, o campo automático deve mostrar `R$ 478,89`.
