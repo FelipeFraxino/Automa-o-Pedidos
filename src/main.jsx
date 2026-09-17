@@ -158,6 +158,7 @@ const readPdfOrder = async file => {
     const allItems = lines.flatMap(line => line.items)
     const brandHeader = allItems.find(item => normalize(item.text) === 'marca')
     const packageHeader = allItems.find(item => ['emb.', 'emb'].includes(normalize(item.text)))
+    const quantityHeader = allItems.find(item => /^(qtde|qtd|quantidade|quant)$/.test(normalize(item.text)))
 
     for (const line of lines) {
       const joined = normalize(line.items.map(item => item.text).join(' '))
@@ -177,7 +178,13 @@ const readPdfOrder = async file => {
         .filter(value => value !== null)
 
       let quantity = null
-      if (modelId === 'ouro-branco' && numericAfter.length >= 2) {
+      let quantityItem = null
+      if (modelId === 'piraquara' && quantityHeader && numericAfterItems.length) {
+        quantityItem = numericAfterItems.reduce((nearest, item) =>
+          Math.abs(item.x - quantityHeader.x) < Math.abs(nearest.x - quantityHeader.x) ? item : nearest
+        )
+        quantity = parsePdfNumber(quantityItem.text)
+      } else if (modelId === 'ouro-branco' && numericAfter.length >= 2) {
         quantity = numericAfter[0] * numericAfter[1]
       } else if (numericAfter.length) {
         quantity = numericAfter[0]
@@ -200,8 +207,12 @@ const readPdfOrder = async file => {
       }
 
       const ean = cleanEan(eanItem.text)
-      const lineTotal = parsePdfMoney(numericAfterItems.at(-1)?.text)
-      const unitCandidates = numericAfterItems.slice(0, -1)
+      const valueItems = modelId === 'piraquara' && quantityHeader
+        ? numericAfterItems.filter(item => item.x > quantityHeader.x + 20)
+        : numericAfterItems
+      const lineTotal = parsePdfMoney(valueItems.at(-1)?.text)
+      const unitCandidates = valueItems.slice(0, -1)
+        .filter(item => item !== quantityItem)
         .map(item => parsePdfMoney(item.text))
         .filter(value => value > 0)
       const ValorUnitario = unitCandidates.length && lineTotal
