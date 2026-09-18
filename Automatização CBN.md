@@ -382,3 +382,17 @@ Atualização de 18/09/2026:
 - nome oficial: `Gestão de Pedidos - CBN Distribuidora`;
 - o novo nome aparece na tela de acesso, no menu principal e na aba do navegador;
 - a alteração é apenas de identidade visual e não modifica as regras de conversão existentes.
+
+
+## Modelo variável - Ordem de Compra JHL
+
+Atualização de 18/09/2026:
+
+- reconhecer PDFs com o cabeçalho `JHL PRODUTOS DE HIGIENE E LIMPEZA LTDA` e `PEDIDO DE COMPRA`;
+- ler por posição das colunas: referência, nome do produto, código de barras, quantidade, preço unitário e preço total;
+- identificar a indústria pelo código interno: `RB` = Reckitt, `LO` = L'Oréal e `SB` = 3M;
+- confrontar códigos internos sem EAN impresso com a base do Supabase para tentar recuperar o código de barras;
+- itens sem EAN e sem correspondência na base permanecem na planilha completa, com código interno, descrição, quantidade e valores, para revisão;
+- Reckitt/Reppos continua com somente `EAN` e `Quantidade`;
+- no pedido nº `035564`, foram identificadas 12 linhas Reckitt e total geral de `R$ 5.811,66`;
+- as referências `RB77187` e `RB16651` não possuem EAN impresso no PDF e dependem da correspondência na base para entrar no Reppos.
