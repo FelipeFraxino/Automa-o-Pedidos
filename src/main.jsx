@@ -128,16 +128,18 @@ const parseJhlPurchaseOrder = pages => {
   for (const lines of pages) {
     const allItems = lines.flatMap(line => line.items)
     const quantityHeader = allItems.find(item => normalize(item.text) === 'qtde')
-    const barcodeHeader = allItems.find(item => normalize(item.text) === 'cod.')
-    const productHeader = allItems.find(item => normalize(item.text) === 'nome')
+    const barcodeHeader = allItems.find(item => /\bcod\.?\s+de\s+barras\b/.test(normalize(item.text)))
+      || allItems.find(item => normalize(item.text) === 'cod.')
+    const productHeader = allItems.find(item => /^nome(?:\s+do\s+produto)?$/.test(normalize(item.text)))
     if (!quantityHeader || !barcodeHeader) continue
 
     for (const line of lines) {
-      const referenceItem = line.items.find(item => /^(RB|LO|SB)[A-Z0-9-]+$/i.test(item.text))
-      if (!referenceItem) continue
+      const referenceItem = line.items.find(item => item.x < (productHeader?.x ?? barcodeHeader.x) && /\b(?:RB|LO|SB)[A-Z0-9-]+\b/i.test(item.text))
+      const reference = referenceItem?.text.match(/\b(?:RB|LO|SB)[A-Z0-9-]+\b/i)?.[0]
+      if (!reference) continue
 
       const eanItem = line.items.find(item =>
-        /^\d{12,14}$/.test(item.text) &&
+        /\b\d{12,14}\b/.test(item.text) &&
         item.x >= barcodeHeader.x - 10 &&
         item.x < quantityHeader.x - 25
       )
@@ -155,14 +157,14 @@ const parseJhlPurchaseOrder = pages => {
         .sort((a, b) => a.x - b.x)
       const ValorUnitario = parsePdfMoney(priceItems[0]?.text)
       const ValorTotal = parsePdfMoney(priceItems.at(-1)?.text)
-      const itemStart = productHeader ? productHeader.x - 45 : referenceItem.x + 35
+      const itemStart = productHeader ? productHeader.x - 3 : referenceItem.x + 35
       const Item = line.items
         .filter(item => item.x >= itemStart && item.x < barcodeHeader.x - 3 && normalize(item.text) !== 'un')
         .map(item => item.text)
         .join(' ')
         .trim() || 'Item para revisar'
 
-      const CodigoInterno = referenceItem.text.toUpperCase()
+      const CodigoInterno = reference.toUpperCase()
       const Industria = CodigoInterno.startsWith('RB')
         ? 'RECKITT'
         : CodigoInterno.startsWith('LO')
@@ -172,7 +174,7 @@ const parseJhlPurchaseOrder = pages => {
             : 'NAO_IDENTIFICADA'
 
       rows.push({
-        EAN: eanItem?.text || '',
+        EAN: eanItem?.text.match(/\b\d{12,14}\b/)?.[0] || '',
         CodigoInterno,
         Item,
         Quantidade,
@@ -888,8 +890,8 @@ function App({ session }) {
         return {
           EAN,
           Quantidade: quantity,
-          Industria: catalogIndustries[EAN] ||
-            (['RECKITT', 'LOREAL', '3M'].includes(declaredIndustry) ? declaredIndustry : 'NAO_IDENTIFICADA'),
+          Industria: ['RECKITT', 'LOREAL', '3M'].includes(declaredIndustry)
+            ? declaredIndustry : catalogIndustries[EAN] || 'NAO_IDENTIFICADA',
         }
       })
       .filter(item =>
@@ -906,7 +908,8 @@ function App({ session }) {
     return orderDetails
       .map(item => ({
         ...item,
-        Industria: catalogIndustries[item.EAN] || item.Industria || inferIndustryFromItem(item.Item),
+        Industria: ['RECKITT', 'LOREAL', '3M'].includes(item.Industria)
+          ? item.Industria : catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item),
       }))
       .sort((a, b) => (order[a.Industria] ?? 3) - (order[b.Industria] ?? 3))
   }, [orderDetails, catalogIndustries])
