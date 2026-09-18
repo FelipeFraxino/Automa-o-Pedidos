@@ -1,4 +1,4 @@
-# Automatização CBN
+# Gestão de Pedidos - CBN Distribuidora
 
 ## Objetivo
 
@@ -373,3 +373,12 @@ Atualização de 17/09/2026:
 - no caso identificado, os 7 itens da tabela principal somam `R$ 478,89`;
 - o valor incorreto `R$ 898,48` incluía mais `R$ 419,59`, correspondente ao outro bloco de valores do documento;
 - após a correção, o campo automático deve mostrar `R$ 478,89`.
+
+
+## Alteração do nome do programa
+
+Atualização de 18/09/2026:
+
+- nome oficial: `Gestão de Pedidos - CBN Distribuidora`;
+- o novo nome aparece na tela de acesso, no menu principal e na aba do navegador;
+- a alteração é apenas de identidade visual e não modifica as regras de conversão existentes.
