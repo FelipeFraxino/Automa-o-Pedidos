@@ -702,7 +702,7 @@ function LoginScreen() {
     <main className="login-page">
       <section className="login-card">
         <div className="login-brand"><FileSpreadsheet size={28} /></div>
-        <p>AUTOMATIZAÇÃO CBN</p>
+        <p>GESTÃO DE PEDIDOS - CBN DISTRIBUIDORA</p>
         <h1>Acesse o conversor</h1>
         {!sent ? (
           <>
@@ -1477,7 +1477,7 @@ function App({ session }) {
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark"><FileSpreadsheet size={25} /></div>
-          <div><strong>Automatização</strong><span>CBN Distribuidora</span></div>
+          <div><strong>Gestão de Pedidos</strong><span>CBN Distribuidora</span></div>
         </div>
 
         <div className="side-label">MODELOS DE PLANILHA</div>
