@@ -122,6 +122,70 @@ const groupPdfLines = items => {
     .map(line => ({ ...line, items: line.items.sort((a, b) => a.x - b.x) }))
 }
 
+const parseJhlPurchaseOrder = pages => {
+  const rows = []
+
+  for (const lines of pages) {
+    const allItems = lines.flatMap(line => line.items)
+    const quantityHeader = allItems.find(item => normalize(item.text) === 'qtde')
+    const barcodeHeader = allItems.find(item => normalize(item.text) === 'cod.')
+    const productHeader = allItems.find(item => normalize(item.text) === 'nome')
+    if (!quantityHeader || !barcodeHeader) continue
+
+    for (const line of lines) {
+      const referenceItem = line.items.find(item => /^(RB|LO|SB)[A-Z0-9-]+$/i.test(item.text))
+      if (!referenceItem) continue
+
+      const eanItem = line.items.find(item =>
+        /^\d{12,14}$/.test(item.text) &&
+        item.x >= barcodeHeader.x - 10 &&
+        item.x < quantityHeader.x - 25
+      )
+      const numericItems = line.items.filter(item => /^\d[\d.,]*$/.test(item.text))
+      const quantityItem = numericItems.length
+        ? numericItems.reduce((nearest, item) =>
+          Math.abs(item.x - quantityHeader.x) < Math.abs(nearest.x - quantityHeader.x) ? item : nearest
+        )
+        : null
+      const Quantidade = parsePdfNumber(quantityItem?.text)
+      if (!Quantidade) continue
+
+      const priceItems = numericItems
+        .filter(item => item.x > quantityHeader.x + 15)
+        .sort((a, b) => a.x - b.x)
+      const ValorUnitario = parsePdfMoney(priceItems[0]?.text)
+      const ValorTotal = parsePdfMoney(priceItems.at(-1)?.text)
+      const itemStart = productHeader ? productHeader.x - 45 : referenceItem.x + 35
+      const Item = line.items
+        .filter(item => item.x >= itemStart && item.x < barcodeHeader.x - 3 && normalize(item.text) !== 'un')
+        .map(item => item.text)
+        .join(' ')
+        .trim() || 'Item para revisar'
+
+      const CodigoInterno = referenceItem.text.toUpperCase()
+      const Industria = CodigoInterno.startsWith('RB')
+        ? 'RECKITT'
+        : CodigoInterno.startsWith('LO')
+          ? 'LOREAL'
+          : CodigoInterno.startsWith('SB')
+            ? '3M'
+            : 'NAO_IDENTIFICADA'
+
+      rows.push({
+        EAN: eanItem?.text || '',
+        CodigoInterno,
+        Item,
+        Quantidade,
+        ValorUnitario,
+        ValorTotal,
+        Industria,
+      })
+    }
+  }
+
+  return rows
+}
+
 const readPdfOrder = async file => {
   const data = new Uint8Array(await file.arrayBuffer())
   const document = await pdfjsLib.getDocument({ data }).promise
@@ -141,6 +205,7 @@ const readPdfOrder = async file => {
   if (normalizedText.includes('hiper erp') || normalizedText.includes('supermercado piraquara')) modelId = 'piraquara'
   else if (normalizedText.includes('hermes') || normalizedText.includes('sugestao de pedido')) modelId = 'ouro-branco'
   else if (normalizedText.includes('cbn distribuidora') && normalizedText.includes('orcamento')) modelId = 'flex-cbn'
+  else if (normalizedText.includes('jhl produtos de higiene') && normalizedText.includes('pedido de compra')) modelId = 'personalizado'
 
   if (!modelId) {
     throw new Error(
@@ -148,6 +213,13 @@ const readPdfOrder = async file => {
         ? 'Este modelo de PDF ainda não foi reconhecido automaticamente.'
         : 'Este PDF é uma imagem escaneada e precisa do módulo de OCR, que será a próxima etapa.'
     )
+  }
+
+  if (modelId === 'personalizado' && normalizedText.includes('jhl produtos de higiene')) {
+    const rows = parseJhlPurchaseOrder(pages)
+    if (!rows.length) throw new Error('Não encontrei itens válidos nesta Ordem de Compra.')
+    const documentTotal = Math.round(rows.reduce((sum, item) => sum + (item.ValorTotal || 0), 0) * 100) / 100
+    return { modelId, rows, documentTotal, storeInfo: null }
   }
 
   const results = []
@@ -577,17 +649,23 @@ const recognizeScannedPdf = async file => {
 
 const mergeItemsByEan = rows => {
   const merged = new Map()
-  for (const item of rows) {
-    if (!item?.EAN) continue
-    const current = merged.get(item.EAN)
+  for (const [index, item] of rows.entries()) {
+    if (!item) continue
+    const key = item.EAN
+      ? `EAN:${item.EAN}`
+      : item.CodigoInterno
+        ? `COD:${item.CodigoInterno}`
+        : `ROW:${index}`
+    const current = merged.get(key)
     if (current) {
       current.Quantidade += item.Quantidade || 0
       current.ValorTotal += item.ValorTotal || 0
       if ((!current.Item || current.Item === 'Item sem descrição' || current.Item === 'Item para revisar') && item.Item) current.Item = item.Item
       if (!current.ValorUnitario && item.ValorUnitario) current.ValorUnitario = item.ValorUnitario
       if (!current.CodigoInterno && item.CodigoInterno) current.CodigoInterno = item.CodigoInterno
+      if (!current.Industria && item.Industria) current.Industria = item.Industria
     } else {
-      merged.set(item.EAN, { ...item })
+      merged.set(key, { ...item })
     }
   }
   return [...merged.values()]
@@ -770,6 +848,7 @@ function App({ session }) {
   const [quantityMode, setQuantityMode] = useState('direct')
   const [outputIndustry, setOutputIndustry] = useState('RECKITT')
   const [catalogIndustries, setCatalogIndustries] = useState({})
+  const [catalogByCode, setCatalogByCode] = useState({})
   const [message, setMessage] = useState(null)
   const [isDragging, setIsDragging] = useState(false)
   const [pendingFiles, setPendingFiles] = useState([])
@@ -796,6 +875,7 @@ function App({ session }) {
     const eanIndex = headers.indexOf(eanColumn)
     const quantityIndex = headers.indexOf(quantityColumn)
     const packageIndex = headers.indexOf(packageColumn)
+    const industryIndex = headers.indexOf('Industria')
     if (eanIndex < 0 || quantityIndex < 0) return []
     const validRows = workbookRows
       .slice(headerRow)
@@ -804,7 +884,13 @@ function App({ session }) {
         const ordered = cleanQuantity(row[quantityIndex])
         const pack = quantityMode === 'multiply' ? cleanQuantity(row[packageIndex]) : 1
         const quantity = ordered !== null && pack !== null ? ordered * pack : null
-        return { EAN, Quantidade: quantity, Industria: catalogIndustries[EAN] || 'NAO_IDENTIFICADA' }
+        const declaredIndustry = industryIndex >= 0 ? String(row[industryIndex] || '').toUpperCase() : ''
+        return {
+          EAN,
+          Quantidade: quantity,
+          Industria: catalogIndustries[EAN] ||
+            (['RECKITT', 'LOREAL', '3M'].includes(declaredIndustry) ? declaredIndustry : 'NAO_IDENTIFICADA'),
+        }
       })
       .filter(item =>
         item.EAN &&
@@ -818,7 +904,10 @@ function App({ session }) {
   const detailedPreview = useMemo(() => {
     const order = { RECKITT: 0, LOREAL: 1, '3M': 2, NAO_IDENTIFICADA: 3 }
     return orderDetails
-      .map(item => ({ ...item, Industria: catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item) }))
+      .map(item => ({
+        ...item,
+        Industria: catalogIndustries[item.EAN] || item.Industria || inferIndustryFromItem(item.Item),
+      }))
       .sort((a, b) => (order[a.Industria] ?? 3) - (order[b.Industria] ?? 3))
   }, [orderDetails, catalogIndustries])
 
@@ -900,7 +989,7 @@ function App({ session }) {
       for (let start = 0; start < 2000; start += 1000) {
         const { data, error } = await supabase
           .from('catalogo_produtos')
-          .select('ean,industria')
+          .select('ean,industria,codigo_cbn')
           .eq('user_id', session.user.id)
           .range(start, start + 999)
 
@@ -914,14 +1003,18 @@ function App({ session }) {
 
       if (active) {
         const industryMap = {}
+        const codeMap = {}
         for (const item of records.filter(record => record.ean)) {
           const catalogEan = cleanEan(item.ean)
           industryMap[catalogEan] = item.industria
           // Alguns PDFs completam o UPC de 12 dígitos com um zero à esquerda.
           // O alias serve apenas para classificar; o EAN exportado não é alterado.
           if (catalogEan.length === 12) industryMap[`0${catalogEan}`] = item.industria
+          const catalogCode = String(item.codigo_cbn || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+          if (catalogCode) codeMap[catalogCode] = { EAN: catalogEan, Industria: item.industria }
         }
         setCatalogIndustries(industryMap)
+        setCatalogByCode(codeMap)
       }
     }
 
@@ -992,6 +1085,15 @@ function App({ session }) {
 
   const addFileName = (previous, name, append) => append && previous ? `${previous}, ${name}` : name
 
+  const enrichRowsWithCatalog = rows => rows.map(item => {
+    if (item.EAN || !item.CodigoInterno) return item
+    const key = String(item.CodigoInterno).toUpperCase().replace(/[^A-Z0-9]/g, '')
+    const match = catalogByCode[key]
+    return match
+      ? { ...item, EAN: match.EAN, Industria: match.Industria || item.Industria }
+      : item
+  })
+
   const readFile = async (file, append = false) => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
@@ -1045,6 +1147,7 @@ function App({ session }) {
           modelId = 'personalizado'
           if (!rows.length) throw pdfError
         }
+        rows = enrichRowsWithCatalog(rows)
         await registerNewCatalogItems(rows)
         if (!append) setSelectedId(modelId)
         setSourceOrderTotal(previous => append ? previous + documentTotal : documentTotal)
@@ -1058,8 +1161,8 @@ function App({ session }) {
         })
         setOrderDetails(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
         setWorkbookRows(previous => {
-          const added = rows.map(row => [row.EAN, row.Quantidade])
-          return append && previous.length ? [previous[0], ...previous.slice(1), ...added] : [['EAN', 'Quantidade'], ...added]
+          const added = rows.map(row => [row.EAN, row.Quantidade, row.Industria || ''])
+          return append && previous.length ? [previous[0], ...previous.slice(1), ...added] : [['EAN', 'Quantidade', 'Industria'], ...added]
         })
         setFileName(previous => addFileName(previous, file.name, append))
         setSheetName(
