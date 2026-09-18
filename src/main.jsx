@@ -34,6 +34,50 @@ const inferIndustryFromItem = itemName => {
   return 'NAO_IDENTIFICADA'
 }
 
+const normalizeCatalogCode = value => String(value || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
+
+const isMasterCatalogRecord = record => normalize(record?.origem).includes('codigos que trabalho')
+
+const buildTrustedCatalogMaps = records => {
+  const industryMap = {}
+  const codeMap = {}
+  for (const item of records.filter(isMasterCatalogRecord)) {
+    const catalogEan = cleanEan(item.ean)
+    const catalogCode = normalizeCatalogCode(item.codigo_cbn)
+    if (catalogEan) {
+      industryMap[catalogEan] = item.industria
+      // Alguns PDFs completam o UPC de 12 dígitos com um zero à esquerda.
+      // O alias serve apenas para classificar; o EAN exportado não é alterado.
+      if (catalogEan.length === 12) industryMap[`0${catalogEan}`] = item.industria
+    }
+    if (catalogCode && catalogEan) codeMap[catalogCode] = { EAN: catalogEan, Industria: item.industria }
+  }
+  return { industryMap, codeMap }
+}
+
+const resolveTrustedIndustry = (item, industryMap, codeMap = {}) => {
+  const ean = cleanEan(item?.EAN)
+  if (ean && industryMap[ean]) return industryMap[ean]
+  if (!ean) {
+    const codeMatch = codeMap[normalizeCatalogCode(item?.CodigoInterno)]
+    if (codeMatch?.Industria) return codeMatch.Industria
+  }
+  const declared = String(item?.Industria || '').toUpperCase()
+  if (declared === 'LOREAL' || declared === '3M') return declared
+  const inferred = inferIndustryFromItem(item?.Item)
+  return inferred === 'RECKITT' ? 'NAO_IDENTIFICADA' : inferred
+}
+
+const enrichRowsFromTrustedCatalog = (rows, industryMap, codeMap) => rows.map(item => {
+  const EAN = cleanEan(item.EAN)
+  if (EAN && industryMap[EAN]) return { ...item, EAN, Industria: industryMap[EAN] }
+  if (!EAN && item.CodigoInterno) {
+    const match = codeMap[normalizeCatalogCode(item.CodigoInterno)]
+    if (match) return { ...item, EAN: match.EAN, Industria: match.Industria }
+  }
+  return { ...item, EAN, Industria: resolveTrustedIndustry(item, industryMap, codeMap) }
+})
+
 const findSuggestedColumn = (headers, terms) => {
   const normalizedTerms = terms.map(normalize)
   return headers.find(header => normalizedTerms.some(term => normalize(header).includes(term))) ?? ''
@@ -165,13 +209,13 @@ const parseJhlPurchaseOrder = pages => {
         .trim() || 'Item para revisar'
 
       const CodigoInterno = reference.toUpperCase()
-      const Industria = CodigoInterno.startsWith('RB')
-        ? 'RECKITT'
-        : CodigoInterno.startsWith('LO')
-          ? 'LOREAL'
-          : CodigoInterno.startsWith('SB')
-            ? '3M'
-            : 'NAO_IDENTIFICADA'
+      // RB não confirma mais Reckitt: a separação final vem da planilha-mãe,
+      // priorizando EAN exato e usando o código CBN somente quando o PDF não traz EAN.
+      const Industria = CodigoInterno.startsWith('LO')
+        ? 'LOREAL'
+        : CodigoInterno.startsWith('SB')
+          ? '3M'
+          : 'NAO_IDENTIFICADA'
 
       rows.push({
         EAN: eanItem?.text.match(/\b\d{12,14}\b/)?.[0] || '',
@@ -887,12 +931,12 @@ function App({ session }) {
         const pack = quantityMode === 'multiply' ? cleanQuantity(row[packageIndex]) : 1
         const quantity = ordered !== null && pack !== null ? ordered * pack : null
         const declaredIndustry = industryIndex >= 0 ? String(row[industryIndex] || '').toUpperCase() : ''
-        return {
+        const candidate = {
           EAN,
           Quantidade: quantity,
-          Industria: ['RECKITT', 'LOREAL', '3M'].includes(declaredIndustry)
-            ? declaredIndustry : catalogIndustries[EAN] || 'NAO_IDENTIFICADA',
+          Industria: declaredIndustry,
         }
+        return { ...candidate, Industria: resolveTrustedIndustry(candidate, catalogIndustries, catalogByCode) }
       })
       .filter(item =>
         item.EAN &&
@@ -901,18 +945,14 @@ function App({ session }) {
         (outputIndustry === 'TODAS' || item.Industria === outputIndustry)
       )
     return mergeItemsByEan(validRows)
-  }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, outputIndustry, catalogIndustries, headers.join('|')])
+  }, [workbookRows, headerRow, eanColumn, quantityColumn, packageColumn, quantityMode, outputIndustry, catalogIndustries, catalogByCode, headers.join('|')])
 
   const detailedPreview = useMemo(() => {
     const order = { RECKITT: 0, LOREAL: 1, '3M': 2, NAO_IDENTIFICADA: 3 }
     return orderDetails
-      .map(item => ({
-        ...item,
-        Industria: ['RECKITT', 'LOREAL', '3M'].includes(item.Industria)
-          ? item.Industria : catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item),
-      }))
+      .map(item => ({ ...item, Industria: resolveTrustedIndustry(item, catalogIndustries, catalogByCode) }))
       .sort((a, b) => (order[a.Industria] ?? 3) - (order[b.Industria] ?? 3))
-  }, [orderDetails, catalogIndustries])
+  }, [orderDetails, catalogIndustries, catalogByCode])
 
   const completeItems = useMemo(() => detailedPreview, [detailedPreview])
 
@@ -934,7 +974,7 @@ function App({ session }) {
       const budget = budgetByEan.get(item.EAN)
       const budgetUnit = budget?.ValorUnitario || (budget?.Quantidade ? (budget.ValorTotal || 0) / budget.Quantidade : 0)
       const value = item.ValorTotal || budgetUnit * item.Quantidade
-      const industry = catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item || budget?.Item)
+      const industry = resolveTrustedIndustry({ ...item, Item: item.Item || budget?.Item }, catalogIndustries, catalogByCode)
       const normalizedItem = {
         ...item,
         Item: item.Item && item.Item !== 'Item sem descrição' ? item.Item : budget?.Item || 'Item sem descrição',
@@ -960,12 +1000,12 @@ function App({ session }) {
       .filter(item => !orderByEan.has(item.EAN))
       .map(item => ({
         ...item,
-        Industria: catalogIndustries[item.EAN] || inferIndustryFromItem(item.Item),
+        Industria: resolveTrustedIndustry(item, catalogIndustries, catalogByCode),
       }))
       .sort((a, b) => (industryOrder[a.Industria] ?? 3) - (industryOrder[b.Industria] ?? 3))
 
     return { pedido, excluidos }
-  }, [budgetRows, comparisonOrderRows, catalogIndustries])
+  }, [budgetRows, comparisonOrderRows, catalogIndustries, catalogByCode])
 
   const comparisonLoss = useMemo(() => {
     const groups = ['RECKITT', 'LOREAL', '3M', 'NAO_IDENTIFICADA']
@@ -989,11 +1029,12 @@ function App({ session }) {
 
     const loadCatalog = async () => {
       const records = []
-      for (let start = 0; start < 2000; start += 1000) {
+      for (let start = 0; ; start += 1000) {
         const { data, error } = await supabase
           .from('catalogo_produtos')
-          .select('ean,industria,codigo_cbn')
+          .select('id,ean,industria,codigo_cbn,origem,tipo_registro')
           .eq('user_id', session.user.id)
+          .order('id', { ascending: true })
           .range(start, start + 999)
 
         if (error) {
@@ -1005,17 +1046,7 @@ function App({ session }) {
       }
 
       if (active) {
-        const industryMap = {}
-        const codeMap = {}
-        for (const item of records.filter(record => record.ean)) {
-          const catalogEan = cleanEan(item.ean)
-          industryMap[catalogEan] = item.industria
-          // Alguns PDFs completam o UPC de 12 dígitos com um zero à esquerda.
-          // O alias serve apenas para classificar; o EAN exportado não é alterado.
-          if (catalogEan.length === 12) industryMap[`0${catalogEan}`] = item.industria
-          const catalogCode = String(item.codigo_cbn || '').toUpperCase().replace(/[^A-Z0-9]/g, '')
-          if (catalogCode) codeMap[catalogCode] = { EAN: catalogEan, Industria: item.industria }
-        }
+        const { industryMap, codeMap } = buildTrustedCatalogMaps(records)
         setCatalogIndustries(industryMap)
         setCatalogByCode(codeMap)
       }
@@ -1068,7 +1099,7 @@ function App({ session }) {
         codigo_cbn: `AUTO-${item.EAN}`,
         produto: item.Item || 'Item novo para revisar',
         ean: item.EAN,
-        industria: inferIndustryFromItem(item.Item),
+        industria: 'NAO_IDENTIFICADA',
         tipo_registro: 'A_REVISAR',
         validado: false,
         origem: 'Leitura automática — pendente de conferência',
@@ -1079,23 +1110,12 @@ function App({ session }) {
         onConflict: 'user_id,codigo_cbn,ean',
         ignoreDuplicates: true,
       })
-      setCatalogIndustries(previous => ({
-        ...previous,
-        ...Object.fromEntries(newItems.map(item => [item.ean, item.industria])),
-      }))
     }
   }
 
   const addFileName = (previous, name, append) => append && previous ? `${previous}, ${name}` : name
 
-  const enrichRowsWithCatalog = rows => rows.map(item => {
-    if (item.EAN || !item.CodigoInterno) return item
-    const key = String(item.CodigoInterno).toUpperCase().replace(/[^A-Z0-9]/g, '')
-    const match = catalogByCode[key]
-    return match
-      ? { ...item, EAN: match.EAN, Industria: match.Industria || item.Industria }
-      : item
-  })
+  const enrichRowsWithCatalog = rows => enrichRowsFromTrustedCatalog(rows, catalogIndustries, catalogByCode)
 
   const readFile = async (file, append = false) => {
     if (!file) return
@@ -1108,7 +1128,7 @@ function App({ session }) {
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
         setMessage({ type: 'success', text: `Lendo ${file.name} por OCR. Isso pode levar alguns minutos…` })
         const recognizedText = await recognizeImage(file)
-        const rows = parseVariableText(recognizedText, catalogIndustries)
+        const rows = enrichRowsWithCatalog(parseVariableText(recognizedText, catalogIndustries))
         const printedTotal = extractPrintedDocumentTotal(recognizedText)
         if (!rows.length) throw new Error('A imagem foi lida, mas o formato da tabela ainda não foi reconhecido. O problema está no leitor, não na qualidade da foto.')
         await registerNewCatalogItems(rows)
@@ -1414,6 +1434,7 @@ function App({ session }) {
       }
 
       if (!rows?.length) throw new Error('Nenhum item foi reconhecido neste arquivo.')
+      rows = enrichRowsWithCatalog(rows)
       await registerNewCatalogItems(rows)
       if (kind === 'budget') {
         setBudgetRows(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
