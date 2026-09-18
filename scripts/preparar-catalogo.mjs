@@ -11,12 +11,13 @@ if (!input) {
 const normalize = value => String(value ?? '').trim()
 const digits = value => normalize(value).replace(/\D/g, '')
 
-const industryOf = (code, product) => {
-  const codigo = normalize(code).toUpperCase()
+const industryOf = (_code, product) => {
   const produto = normalize(product).toUpperCase()
-  if (codigo.startsWith('RB') || produto.startsWith('RCK-')) return 'RECKITT'
-  if (codigo.startsWith('LO') || produto.startsWith('LOR-')) return 'LOREAL'
-  if (codigo.startsWith('SB') || produto.startsWith('SCB-') || produto.startsWith('3M-')) return '3M'
+  // A sigla interna pode permanecer igual depois de uma mudança de indústria.
+  // A importação segue a classificação da planilha-mãe, nunca o prefixo do código.
+  if (produto.startsWith('RCK-')) return 'RECKITT'
+  if (produto.startsWith('LOR-')) return 'LOREAL'
+  if (produto.startsWith('SCB-') || produto.startsWith('3M-')) return '3M'
   return 'NAO_IDENTIFICADA'
 }
 
