@@ -403,3 +403,23 @@ Atualização de 18/09/2026:
 A falha de zero itens foi reproduzida na extração do PDF: o PDF.js agrupa cabeçalho, referência e unidade/EAN em blocos de texto. O leitor agora reconhece esses blocos sem exigir tokens isolados. A classificação explícita RB/LO/SB é preservada na prévia e no filtro de exportação.
 
 Teste local com o PDF original Ordem_Compra_035564.pdf: 12 linhas, 860 unidades, R$ 5.811,66. Conferidos individualmente quantidades, EANs, preços unitários e totais. RB77187 e RB16651 não têm EAN impresso: permanecem no pedido completo; exportação Reppos depende de EAN disponível. Teste de leitura executado com PDF.js 5.6.205 do ambiente local; publicação compila com a dependência do projeto. Não foi testada sessão autenticada do usuário.
+
+
+## Separação Reckitt após divisão da empresa — 18/09/2026
+
+A sigla RB deixou de ser critério suficiente para classificar um item como Reckitt. O sistema agora usa somente registros provenientes da planilha-mãe `códigos que trabalho.xlsx`.
+
+Regra aplicada em todos os modelos e no Confronto de arquivos:
+
+1. Quando existe EAN no pedido, a classificação exige correspondência exata desse EAN na planilha-mãe.
+2. Quando o pedido não contém EAN, o sistema procura o código interno CBN na planilha-mãe e recupera o EAN cadastrado.
+3. O código interno não substitui um EAN presente e divergente; o EAN tem prioridade.
+4. Registros automáticos “A revisar” ficam salvos para conferência, mas não autorizam a entrada no arquivo Reckitt/Reppos.
+5. Produtos sem confirmação permanecem no pedido completo e não desaparecem.
+
+Teste com `Ordem_Compra_035564.pdf` e a planilha-mãe:
+
+- 12 itens no pedido completo, 860 unidades e R$ 5.811,66.
+- 6 itens confirmados como Reckitt/Reppos: RB93567, RB24250, RB52426, RB24259, RB93593 e RB77187.
+- 6 itens mantidos na planilha geral como “A revisar”.
+- RB77187 não tem EAN no PDF; o sistema recupera o EAN 7891035001840 pelo código interno da planilha-mãe.
