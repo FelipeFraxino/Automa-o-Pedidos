@@ -396,3 +396,10 @@ Atualização de 18/09/2026:
 - Reckitt/Reppos continua com somente `EAN` e `Quantidade`;
 - no pedido nº `035564`, foram identificadas 12 linhas Reckitt e total geral de `R$ 5.811,66`;
 - as referências `RB77187` e `RB16651` não possuem EAN impresso no PDF e dependem da correspondência na base para entrar no Reppos.
+
+
+## Correção da leitura JHL — 18/09/2026
+
+A falha de zero itens foi reproduzida na extração do PDF: o PDF.js agrupa cabeçalho, referência e unidade/EAN em blocos de texto. O leitor agora reconhece esses blocos sem exigir tokens isolados. A classificação explícita RB/LO/SB é preservada na prévia e no filtro de exportação.
+
+Teste local com o PDF original Ordem_Compra_035564.pdf: 12 linhas, 860 unidades, R$ 5.811,66. Conferidos individualmente quantidades, EANs, preços unitários e totais. RB77187 e RB16651 não têm EAN impresso: permanecem no pedido completo; exportação Reppos depende de EAN disponível. Teste de leitura executado com PDF.js 5.6.205 do ambiente local; publicação compila com a dependência do projeto. Não foi testada sessão autenticada do usuário.
