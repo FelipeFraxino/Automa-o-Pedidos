@@ -7,7 +7,7 @@ import { createWorker, PSM } from 'tesseract.js'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
   CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail, KeyRound,
-  ClipboardCopy, PlayCircle, ShieldCheck
+  PlayCircle, ShieldCheck
 } from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
@@ -920,13 +920,16 @@ function App({ session }) {
   const [comparisonLoading, setComparisonLoading] = useState('')
   const budgetFileRef = useRef(null)
   const orderFileRef = useRef(null)
-  const [piraquaraExecution, setPiraquaraExecution] = useState(() => {
+  const [piraquaraObservation, setPiraquaraObservation] = useState(() => {
     try {
-      return JSON.parse(localStorage.getItem('cbn-piraquara-execution') || 'null') || { start: '', end: '', notes: '' }
+      const saved = JSON.parse(localStorage.getItem('cbn-piraquara-execution') || 'null')
+      return saved?.notes || ''
     } catch {
-      return { start: '', end: '', notes: '' }
+      return ''
     }
   })
+  const [piraquaraSubmitting, setPiraquaraSubmitting] = useState(false)
+  const [piraquaraRequest, setPiraquaraRequest] = useState(null)
 
   const selected = selectedId === PIRAQUARA_EXECUTION.id
     ? PIRAQUARA_EXECUTION
@@ -934,38 +937,8 @@ function App({ session }) {
   const headers = workbookRows[Math.max(0, headerRow - 1)]?.map((value, index) => String(value || `Coluna ${index + 1}`).trim()) || []
 
   useEffect(() => {
-    localStorage.setItem('cbn-piraquara-execution', JSON.stringify(piraquaraExecution))
-  }, [piraquaraExecution])
-
-  const piraquaraCommand = useMemo(() => {
-    const start = piraquaraExecution.start.trim()
-    const end = piraquaraExecution.end.trim()
-    const interval = start && end
-      ? `do PDF/pedido ${start} até ${end}`
-      : start
-        ? `a partir do PDF/pedido ${start}`
-        : end
-          ? `até o PDF/pedido ${end}`
-          : '[informe o intervalo dos PDFs/pedidos]'
-    const notes = piraquaraExecution.notes.trim() || 'Sem observações adicionais.'
-
-    return `Execute os pedidos da Rede Piraquara ${interval}.
-
-Etapas:
-1. Localize os PDFs correspondentes no Gmail.
-2. Converta cada pedido no Gestão de Pedidos – CBN Distribuidora.
-3. Use a planilha-mãe para identificar somente os produtos Reckitt por EAN exato.
-4. Importe no Reppos apenas EAN e Quantidade dos itens Reckitt válidos.
-5. Confira CNPJ, destino/loja, itens, quantidades e eventuais erros.
-6. Deixe o carrinho preparado para minha revisão manual.
-
-REGRA OBRIGATÓRIA: nunca finalize, confirme ou envie a compra automaticamente.
-
-Observações:
-${notes}
-
-Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e qualquer pendência.`
-  }, [piraquaraExecution])
+    localStorage.setItem('cbn-piraquara-execution', JSON.stringify({ notes: piraquaraObservation }))
+  }, [piraquaraObservation])
 
   const converted = useMemo(() => {
     if (!workbookRows.length || !eanColumn || !quantityColumn) return []
@@ -1636,23 +1609,30 @@ Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e
     setPasswordMessage({ type: 'success', text: 'Senha criada com sucesso. Agora você pode entrar com e-mail e senha.' })
   }
 
-  const copyPiraquaraCommand = async () => {
-    if (!piraquaraExecution.start.trim() && !piraquaraExecution.end.trim()) {
-      setMessage({ type: 'error', text: 'Informe pelo menos o primeiro ou o último PDF/pedido.' })
+  const requestPiraquaraExecution = async () => {
+    setPiraquaraSubmitting(true)
+    setMessage(null)
+    const { data, error } = await supabase
+      .from('piraquara_execucoes')
+      .insert({
+        user_id: session.user.id,
+        observacao: piraquaraObservation.trim(),
+        escopo: 'TODOS_OS_PEDIDOS_NOVOS_DO_EMAIL',
+        versao_regras: 'piraquara-v1',
+        avisar_whatsapp: true,
+      })
+      .select('id, status, criado_em')
+      .single()
+    setPiraquaraSubmitting(false)
+
+    if (error) {
+      setMessage({ type: 'error', text: 'Não foi possível registrar a execução. Tente novamente.' })
       return
     }
 
-    try {
-      await navigator.clipboard.writeText(piraquaraCommand)
-    } catch {
-      const textArea = document.createElement('textarea')
-      textArea.value = piraquaraCommand
-      document.body.appendChild(textArea)
-      textArea.select()
-      document.execCommand('copy')
-      textArea.remove()
-    }
-    setMessage({ type: 'success', text: 'Comando copiado. Cole na conversa do ChatGPT Work para iniciar a execução.' })
+    setPiraquaraRequest(data)
+    setPiraquaraObservation('')
+    setMessage({ type: 'success', text: 'Solicitação registrada. Todos os pedidos novos do e-mail entrarão nesta execução.' })
   }
 
   const resetFile = () => {
@@ -1738,37 +1718,18 @@ Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e
               <div className="execution-intro">
                 <div className="execution-intro-icon"><PlayCircle size={28} /></div>
                 <div>
-                  <h2>Preparar execução dos pedidos Piraquara</h2>
-                  <p>Informe o intervalo e copie a solicitação pronta para executar no ChatGPT Work.</p>
+                  <h2>Executar pedidos Piraquara</h2>
+                  <p>O sistema considera todos os pedidos novos recebidos no e-mail.</p>
                 </div>
               </div>
 
               <div className="execution-card">
-                <div className="execution-grid">
-                  <label>
-                    Primeiro PDF ou pedido
-                    <input
-                      value={piraquaraExecution.start}
-                      onChange={event => setPiraquaraExecution(current => ({ ...current, start: event.target.value }))}
-                      placeholder="Ex.: 092689848470"
-                    />
-                  </label>
-                  <label>
-                    Último PDF ou pedido
-                    <input
-                      value={piraquaraExecution.end}
-                      onChange={event => setPiraquaraExecution(current => ({ ...current, end: event.target.value }))}
-                      placeholder="Ex.: 092689848475"
-                    />
-                  </label>
-                </div>
-
                 <label className="execution-notes">
-                  Observações para esta execução
+                  Observação (opcional)
                   <textarea
-                    value={piraquaraExecution.notes}
-                    onChange={event => setPiraquaraExecution(current => ({ ...current, notes: event.target.value }))}
-                    placeholder="Ex.: conferir a loja 02 com atenção; ignorar um pedido específico…"
+                    value={piraquaraObservation}
+                    onChange={event => setPiraquaraObservation(event.target.value)}
+                    placeholder="Ex.: conferir a loja 02 com atenção ou ignorar um pedido específico…"
                     rows="5"
                   />
                 </label>
@@ -1778,16 +1739,18 @@ Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e
                   <div><strong>Revisão manual obrigatória</strong><span>O processo prepara o carrinho no Reppos, mas nunca finaliza, confirma ou envia a compra automaticamente.</span></div>
                 </div>
 
-                <div className="command-preview">
-                  <div><strong>Solicitação pronta</strong><span>Confira antes de copiar.</span></div>
-                  <pre>{piraquaraCommand}</pre>
-                </div>
-
                 <div className="execution-actions">
-                  <button className="ghost-button" onClick={() => setPiraquaraExecution({ start: '', end: '', notes: '' })}>Limpar</button>
-                  <button className="primary-button" onClick={copyPiraquaraCommand}><ClipboardCopy size={19} /> Copiar comando para executar</button>
+                  <button className="primary-button execution-submit" disabled={piraquaraSubmitting} onClick={requestPiraquaraExecution}>
+                    <PlayCircle size={19} /> {piraquaraSubmitting ? 'Registrando…' : 'Executar todos os pedidos novos'}
+                  </button>
                 </div>
-                <p className="execution-help">Nesta etapa, o botão copia o comando. Cole-o nesta conversa para eu executar com você no navegador na nuvem.</p>
+                {piraquaraRequest && (
+                  <div className="execution-status">
+                    <CheckCircle2 size={19} />
+                    <div><strong>Execução solicitada</strong><span>Status: aguardando o executor automático.</span></div>
+                  </div>
+                )}
+                <p className="execution-help">O aviso no WhatsApp será enviado quando os carrinhos estiverem prontos, após a conexão do provedor oficial de mensagens.</p>
               </div>
             </>
           ) : selectedId === 'confronto' ? (
