@@ -6,7 +6,8 @@ import pdfWorker from 'pdfjs-dist/build/pdf.worker.min.mjs?url'
 import { createWorker, PSM } from 'tesseract.js'
 import {
   FileSpreadsheet, UploadCloud, Download, Settings2, Plus, Trash2,
-  CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail, KeyRound
+  CheckCircle2, AlertCircle, ChevronRight, Database, RotateCcw, LogOut, Mail, KeyRound,
+  ClipboardCopy, PlayCircle, ShieldCheck
 } from 'lucide-react'
 import { supabase } from './supabase'
 import './styles.css'
@@ -22,6 +23,13 @@ const BASE_MODELS = [
   { id: 'personalizado', name: 'Modelo variável', description: 'Leitura completa para Excel, PDF, foto ou print, com revisão antes da exportação', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
   { id: 'confronto', name: 'Confronto de arquivos', description: 'Compare o orçamento enviado com o pedido recebido', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
 ]
+
+const PIRAQUARA_EXECUTION = {
+  id: 'executar-piraquara',
+  name: 'Executar pedidos Piraquara',
+  description: 'Monte a solicitação de execução por intervalo e deixe observações para o processamento.',
+  fixed: true,
+}
 
 const normalize = value => String(value ?? '').trim().toLowerCase()
   .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
@@ -912,9 +920,52 @@ function App({ session }) {
   const [comparisonLoading, setComparisonLoading] = useState('')
   const budgetFileRef = useRef(null)
   const orderFileRef = useRef(null)
+  const [piraquaraExecution, setPiraquaraExecution] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cbn-piraquara-execution') || 'null') || { start: '', end: '', notes: '' }
+    } catch {
+      return { start: '', end: '', notes: '' }
+    }
+  })
 
-  const selected = models.find(model => model.id === selectedId) || models[0]
+  const selected = selectedId === PIRAQUARA_EXECUTION.id
+    ? PIRAQUARA_EXECUTION
+    : models.find(model => model.id === selectedId) || models[0]
   const headers = workbookRows[Math.max(0, headerRow - 1)]?.map((value, index) => String(value || `Coluna ${index + 1}`).trim()) || []
+
+  useEffect(() => {
+    localStorage.setItem('cbn-piraquara-execution', JSON.stringify(piraquaraExecution))
+  }, [piraquaraExecution])
+
+  const piraquaraCommand = useMemo(() => {
+    const start = piraquaraExecution.start.trim()
+    const end = piraquaraExecution.end.trim()
+    const interval = start && end
+      ? `do PDF/pedido ${start} até ${end}`
+      : start
+        ? `a partir do PDF/pedido ${start}`
+        : end
+          ? `até o PDF/pedido ${end}`
+          : '[informe o intervalo dos PDFs/pedidos]'
+    const notes = piraquaraExecution.notes.trim() || 'Sem observações adicionais.'
+
+    return `Execute os pedidos da Rede Piraquara ${interval}.
+
+Etapas:
+1. Localize os PDFs correspondentes no Gmail.
+2. Converta cada pedido no Gestão de Pedidos – CBN Distribuidora.
+3. Use a planilha-mãe para identificar somente os produtos Reckitt por EAN exato.
+4. Importe no Reppos apenas EAN e Quantidade dos itens Reckitt válidos.
+5. Confira CNPJ, destino/loja, itens, quantidades e eventuais erros.
+6. Deixe o carrinho preparado para minha revisão manual.
+
+REGRA OBRIGATÓRIA: nunca finalize, confirme ou envie a compra automaticamente.
+
+Observações:
+${notes}
+
+Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e qualquer pendência.`
+  }, [piraquaraExecution])
 
   const converted = useMemo(() => {
     if (!workbookRows.length || !eanColumn || !quantityColumn) return []
@@ -1585,6 +1636,25 @@ function App({ session }) {
     setPasswordMessage({ type: 'success', text: 'Senha criada com sucesso. Agora você pode entrar com e-mail e senha.' })
   }
 
+  const copyPiraquaraCommand = async () => {
+    if (!piraquaraExecution.start.trim() && !piraquaraExecution.end.trim()) {
+      setMessage({ type: 'error', text: 'Informe pelo menos o primeiro ou o último PDF/pedido.' })
+      return
+    }
+
+    try {
+      await navigator.clipboard.writeText(piraquaraCommand)
+    } catch {
+      const textArea = document.createElement('textarea')
+      textArea.value = piraquaraCommand
+      document.body.appendChild(textArea)
+      textArea.select()
+      document.execCommand('copy')
+      textArea.remove()
+    }
+    setMessage({ type: 'success', text: 'Comando copiado. Cole na conversa do ChatGPT Work para iniciar a execução.' })
+  }
+
   const resetFile = () => {
     setPendingFiles([])
     setWorkbookRows([])
@@ -1624,6 +1694,16 @@ function App({ session }) {
         </nav>
         <button className="add-model" onClick={addCustomModel}><Plus size={17} /> Adicionar modelo</button>
 
+        <div className="side-label automation-label">AUTOMAÇÃO</div>
+        <button
+          className={`automation-shortcut ${selectedId === PIRAQUARA_EXECUTION.id ? 'active' : ''}`}
+          onClick={() => { setSelectedId(PIRAQUARA_EXECUTION.id); setMessage(null) }}
+        >
+          <PlayCircle size={19} />
+          <span><strong>Executar pedidos Piraquara</strong><small>Preparar solicitação</small></span>
+          <ChevronRight size={16} />
+        </button>
+
         <div className="connection-card">
           <Database size={18} />
           <div><strong>Armazenamento</strong><span>{supabase ? 'Supabase configurado' : 'Local — Supabase pendente'}</span></div>
@@ -1640,7 +1720,7 @@ function App({ session }) {
           </div>
 <div className="top-actions">
             <button className="ghost-button" onClick={() => { setPasswordMessage(null); setShowPasswordSetup(true) }}><KeyRound size={17} /> Criar/alterar senha</button>
-            <button className="ghost-button" onClick={saveCurrentModel}><Settings2 size={17} /> Salvar configuração</button>
+            {selectedId !== PIRAQUARA_EXECUTION.id && <button className="ghost-button" onClick={saveCurrentModel}><Settings2 size={17} /> Salvar configuração</button>}
             <button className="ghost-button" onClick={() => supabase.auth.signOut()} title={session.user.email}><LogOut size={17} /> Sair</button>
           </div>
         </header>
@@ -1653,7 +1733,64 @@ function App({ session }) {
             </div>
           )}
 
-          {selectedId === 'confronto' ? (
+          {selectedId === PIRAQUARA_EXECUTION.id ? (
+            <>
+              <div className="execution-intro">
+                <div className="execution-intro-icon"><PlayCircle size={28} /></div>
+                <div>
+                  <h2>Preparar execução dos pedidos Piraquara</h2>
+                  <p>Informe o intervalo e copie a solicitação pronta para executar no ChatGPT Work.</p>
+                </div>
+              </div>
+
+              <div className="execution-card">
+                <div className="execution-grid">
+                  <label>
+                    Primeiro PDF ou pedido
+                    <input
+                      value={piraquaraExecution.start}
+                      onChange={event => setPiraquaraExecution(current => ({ ...current, start: event.target.value }))}
+                      placeholder="Ex.: 092689848470"
+                    />
+                  </label>
+                  <label>
+                    Último PDF ou pedido
+                    <input
+                      value={piraquaraExecution.end}
+                      onChange={event => setPiraquaraExecution(current => ({ ...current, end: event.target.value }))}
+                      placeholder="Ex.: 092689848475"
+                    />
+                  </label>
+                </div>
+
+                <label className="execution-notes">
+                  Observações para esta execução
+                  <textarea
+                    value={piraquaraExecution.notes}
+                    onChange={event => setPiraquaraExecution(current => ({ ...current, notes: event.target.value }))}
+                    placeholder="Ex.: conferir a loja 02 com atenção; ignorar um pedido específico…"
+                    rows="5"
+                  />
+                </label>
+
+                <div className="safety-note">
+                  <ShieldCheck size={22} />
+                  <div><strong>Revisão manual obrigatória</strong><span>O processo prepara o carrinho no Reppos, mas nunca finaliza, confirma ou envia a compra automaticamente.</span></div>
+                </div>
+
+                <div className="command-preview">
+                  <div><strong>Solicitação pronta</strong><span>Confira antes de copiar.</span></div>
+                  <pre>{piraquaraCommand}</pre>
+                </div>
+
+                <div className="execution-actions">
+                  <button className="ghost-button" onClick={() => setPiraquaraExecution({ start: '', end: '', notes: '' })}>Limpar</button>
+                  <button className="primary-button" onClick={copyPiraquaraCommand}><ClipboardCopy size={19} /> Copiar comando para executar</button>
+                </div>
+                <p className="execution-help">Nesta etapa, o botão copia o comando. Cole-o nesta conversa para eu executar com você no navegador na nuvem.</p>
+              </div>
+            </>
+          ) : selectedId === 'confronto' ? (
             <>
               <div className="comparison-intro">
                 <h2>Confronto de arquivos</h2>
