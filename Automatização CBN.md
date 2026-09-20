@@ -104,7 +104,7 @@ O repositório GitHub está público. Arquivos de clientes, base de produtos e d
 
 ## Situação atual
 
-Última atualização: 15 de setembro de 2026.
+Última atualização: 20 de setembro de 2026.
 
 Concluído:
 
@@ -134,6 +134,23 @@ Concluído:
 - módulo “Confronto de arquivos” com campos separados para Orçamento e Pedido;
 - comparação por EAN exato, reaproveitamento do preço do orçamento quando o pedido não informa valor e exportação dos itens excluídos;
 - relatório de perda do pedido por indústria, com quantidade retirada e valor perdido, além dos totais gerais.
+- solicitação simplificada dos pedidos Piraquara, com apenas uma observação opcional;
+- acompanhamento do andamento pelo Supabase, isolado por usuário;
+- aviso visual de conclusão, título da aba com ✅ e aviso sonoro opcional;
+- comando curto para iniciar a execução assistida pelo ChatGPT Work, mantendo as regras internamente.
+
+## Execução assistida dos pedidos Piraquara
+
+Enquanto não houver um robô externo permanentemente ligado, o fluxo confiável é assistido pelo ChatGPT Work:
+
+1. Na tela “Executar pedidos Piraquara”, escrever somente uma observação se necessário.
+2. Clicar em “Registrar execução”.
+3. Colar no ChatGPT Work o comando curto copiado pelo sistema.
+4. O processamento prepara os carrinhos e nunca conclui ou envia o pedido.
+5. Ao terminar, o status no Supabase muda para “Pedidos prontos para conferência”.
+6. A página aberta mostra o aviso verde, altera o título da aba e toca um sinal se o som tiver sido ativado.
+
+O WhatsApp ficou adiado. O status permanece salvo mesmo com a página fechada; o som exige que a página esteja aberta e que “Ativar aviso sonoro” tenha sido pressionado naquela sessão do navegador.
 
 Endereço da aplicação:
 
