@@ -1677,6 +1677,16 @@ Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e
           <div><strong>Gestão de Pedidos</strong><span>CBN Distribuidora</span></div>
         </div>
 
+        <div className="side-label automation-label">AUTOMAÇÃO</div>
+        <button
+          className={`automation-shortcut ${selectedId === PIRAQUARA_EXECUTION.id ? 'active' : ''}`}
+          onClick={() => { setSelectedId(PIRAQUARA_EXECUTION.id); setMessage(null) }}
+        >
+          <PlayCircle size={19} />
+          <span><strong>Executar pedidos Piraquara</strong><small>Preparar solicitação</small></span>
+          <ChevronRight size={16} />
+        </button>
+
         <div className="side-label">MODELOS DE PLANILHA</div>
         <nav className="model-list">
           {models.map(model => (
@@ -1693,16 +1703,6 @@ Ao terminar, informe os PDFs processados, CNPJ e loja, total de itens/unidades e
           ))}
         </nav>
         <button className="add-model" onClick={addCustomModel}><Plus size={17} /> Adicionar modelo</button>
-
-        <div className="side-label automation-label">AUTOMAÇÃO</div>
-        <button
-          className={`automation-shortcut ${selectedId === PIRAQUARA_EXECUTION.id ? 'active' : ''}`}
-          onClick={() => { setSelectedId(PIRAQUARA_EXECUTION.id); setMessage(null) }}
-        >
-          <PlayCircle size={19} />
-          <span><strong>Executar pedidos Piraquara</strong><small>Preparar solicitação</small></span>
-          <ChevronRight size={16} />
-        </button>
 
         <div className="connection-card">
           <Database size={18} />
