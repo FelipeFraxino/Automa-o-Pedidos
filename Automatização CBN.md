@@ -434,3 +434,13 @@ Teste com `Ordem_Compra_035564.pdf` e a planilha-mãe:
 - a solicitação exige localização dos PDFs, conversão, classificação Reckitt pela planilha-mãe, importação de EAN e quantidade no Reppos e relatório de pendências;
 - regra fixa de segurança: o processo pode preparar o carrinho, mas nunca finaliza, confirma ou envia a compra automaticamente;
 - a finalização continua dependendo da revisão manual do usuário.
+
+### Simplificação do painel
+
+- removidos os campos de intervalo e a prévia extensa do comando;
+- a tela passa a ter somente uma observação opcional e o botão `Executar todos os pedidos novos`;
+- as regras do fluxo ficam internas e a solicitação é registrada no Supabase;
+- cada solicitação possui status para acompanhamento: solicitado, em execução, aguardando revisão, concluído ou erro;
+- o telefone de aviso foi guardado como segredo criptografado no Supabase e não aparece no código público;
+- o envio automático pelo WhatsApp depende da conexão futura com a API oficial da Meta ou outro provedor autorizado;
+- até essa integração ser conectada, o sistema registra a solicitação, mas não afirma que a mensagem foi enviada.
