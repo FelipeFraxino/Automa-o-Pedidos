@@ -365,3 +365,53 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .total-check { align-items: stretch; flex-direction: column; }
   .total-check label { min-width: 0; }
 }
+
+.automation-label { margin-top: 24px; }
+.automation-shortcut {
+  width: 100%;
+  padding: 13px 12px;
+  border: 1px solid rgba(130, 186, 220, .28);
+  border-radius: 11px;
+  color: #d9edf9;
+  background: rgba(255, 255, 255, .055);
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+}
+.automation-shortcut:hover, .automation-shortcut.active { color: white; border-color: rgba(245, 119, 55, .75); background: rgba(245, 119, 55, .18); }
+.automation-shortcut span, .automation-shortcut strong, .automation-shortcut small { display: block; }
+.automation-shortcut strong { font-size: 12px; }
+.automation-shortcut small { margin-top: 3px; color: #91bdd7; font-size: 9px; }
+.automation-shortcut.active small { color: #ffd9c5; }
+.execution-intro { padding: 23px 26px; border-radius: 15px; color: white; background: linear-gradient(135deg, #123f66, #1c5c87); display: flex; align-items: center; gap: 16px; }
+.execution-intro-icon { width: 52px; height: 52px; flex: 0 0 auto; border-radius: 14px; background: rgba(255, 255, 255, .13); display: grid; place-items: center; }
+.execution-intro h2 { margin: 0 0 6px; font-size: 21px; }
+.execution-intro p { margin: 0; color: #c8dbe9; font-size: 12px; line-height: 1.5; }
+.execution-card { padding: 26px; border: 1px solid #dfe8ee; border-radius: 15px; background: white; box-shadow: 0 8px 24px rgba(20, 58, 83, .055); }
+.execution-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.execution-card label { color: #173a54; font-size: 11px; font-weight: 700; }
+.execution-card input, .execution-card textarea { width: 100%; margin-top: 8px; padding: 12px 13px; border: 1px solid #cbd9e5; border-radius: 9px; color: #173a54; background: #fff; font: inherit; font-weight: 400; box-sizing: border-box; }
+.execution-card input:focus, .execution-card textarea:focus { outline: 2px solid rgba(237, 108, 44, .18); border-color: #ed6c2c; }
+.execution-notes { display: block; margin-top: 18px; }
+.execution-notes textarea { min-height: 112px; resize: vertical; line-height: 1.5; }
+.safety-note { margin-top: 18px; padding: 15px 16px; border: 1px solid #a9dbc2; border-radius: 11px; color: #246847; background: #f1fbf6; display: flex; align-items: flex-start; gap: 11px; }
+.safety-note strong, .safety-note span { display: block; }
+.safety-note strong { margin-bottom: 4px; font-size: 12px; }
+.safety-note span { color: #5b806c; font-size: 10px; line-height: 1.5; }
+.command-preview { margin-top: 18px; }
+.command-preview > div { margin-bottom: 9px; display: flex; align-items: baseline; justify-content: space-between; gap: 14px; }
+.command-preview strong { color: #173a54; font-size: 12px; }
+.command-preview span { color: #8294a2; font-size: 9px; }
+.command-preview pre { max-height: 260px; margin: 0; padding: 17px; overflow: auto; white-space: pre-wrap; border: 1px solid #dce6ed; border-radius: 11px; color: #345369; background: #f7fafc; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+.execution-actions { margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px; }
+.execution-help { margin: 12px 0 0; color: #7a8e9d; font-size: 9px; text-align: right; }
+
+@media (max-width: 760px) {
+  .execution-grid { grid-template-columns: 1fr; }
+  .execution-intro { align-items: flex-start; }
+  .execution-actions { flex-direction: column-reverse; }
+  .execution-actions button { justify-content: center; }
+  .execution-help { text-align: left; }
+}
