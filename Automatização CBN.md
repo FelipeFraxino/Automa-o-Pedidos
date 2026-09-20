@@ -423,3 +423,14 @@ Teste com `Ordem_Compra_035564.pdf` e a planilha-mãe:
 - 6 itens confirmados como Reckitt/Reppos: RB93567, RB24250, RB52426, RB24259, RB93593 e RB77187.
 - 6 itens mantidos na planilha geral como “A revisar”.
 - RB77187 não tem EAN no PDF; o sistema recupera o EAN 7891035001840 pelo código interno da planilha-mãe.
+
+
+## Painel de execução Piraquara — 20/09/2026
+
+- novo atalho `Executar pedidos Piraquara` na área de Automação do menu;
+- permite informar o primeiro e o último PDF/pedido e acrescentar observações livres;
+- mantém o rascunho salvo no navegador para não perder o intervalo ao trocar de tela;
+- mostra a solicitação completa antes da execução e permite copiá-la para o ChatGPT Work;
+- a solicitação exige localização dos PDFs, conversão, classificação Reckitt pela planilha-mãe, importação de EAN e quantidade no Reppos e relatório de pendências;
+- regra fixa de segurança: o processo pode preparar o carrinho, mas nunca finaliza, confirma ou envia a compra automaticamente;
+- a finalização continua dependendo da revisão manual do usuário.
