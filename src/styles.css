@@ -419,9 +419,21 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   align-items: flex-start;
   gap: 10px;
 }
+.execution-status.waiting { border-color: #cbdde9; color: #245873; background: #f1f7fb; }
+.execution-status.running { border-color: #f1d093; color: #805512; background: #fff8e9; }
+.execution-status.ready { border-color: #78cfa5; color: #0c6845; background: #e3f8ed; box-shadow: 0 0 0 3px rgba(58, 174, 116, .08); }
+.execution-status.error { border-color: #efb4ad; color: #a2322a; background: #fff0ee; }
+.execution-status-copy { flex: 1; }
 .execution-status strong, .execution-status span { display: block; }
 .execution-status strong { font-size: 12px; }
 .execution-status span { margin-top: 3px; color: #5c806f; font-size: 10px; }
+.execution-status small { display: block; margin-top: 7px; font-size: 9px; opacity: .8; }
+.status-action { padding: 8px 11px; border: 1px solid currentColor; border-radius: 8px; color: inherit; background: transparent; font: inherit; font-size: 9px; font-weight: 700; cursor: pointer; }
+.ready-alert-row { margin-top: 16px; padding: 14px 15px; border: 1px solid #dce6ed; border-radius: 10px; background: #f8fafc; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.ready-alert-row strong, .ready-alert-row span { display: block; }
+.ready-alert-row strong { color: #173a54; font-size: 11px; }
+.ready-alert-row span { margin-top: 3px; color: #718897; font-size: 9px; line-height: 1.5; }
+.error-text { color: #b43a31; }
 
 @media (max-width: 760px) {
   .execution-grid { grid-template-columns: 1fr; }
@@ -429,5 +441,7 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .execution-actions { flex-direction: column-reverse; }
   .execution-actions button { justify-content: center; }
   .execution-submit { min-width: 0; width: 100%; }
+  .execution-status, .ready-alert-row { align-items: stretch; flex-direction: column; }
+  .status-action, .ready-alert-row button { justify-content: center; width: 100%; }
   .execution-help { text-align: left; }
 }
