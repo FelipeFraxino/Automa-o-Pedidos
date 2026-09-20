@@ -407,11 +407,27 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
 .command-preview pre { max-height: 260px; margin: 0; padding: 17px; overflow: auto; white-space: pre-wrap; border: 1px solid #dce6ed; border-radius: 11px; color: #345369; background: #f7fafc; font: 10px/1.65 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 .execution-actions { margin-top: 18px; display: flex; justify-content: flex-end; gap: 10px; }
 .execution-help { margin: 12px 0 0; color: #7a8e9d; font-size: 9px; text-align: right; }
+.execution-submit { min-width: 280px; justify-content: center; }
+.execution-status {
+  margin-top: 16px;
+  padding: 14px 15px;
+  border: 1px solid #c9ead9;
+  border-radius: 10px;
+  color: #176b4b;
+  background: #eaf8f1;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.execution-status strong, .execution-status span { display: block; }
+.execution-status strong { font-size: 12px; }
+.execution-status span { margin-top: 3px; color: #5c806f; font-size: 10px; }
 
 @media (max-width: 760px) {
   .execution-grid { grid-template-columns: 1fr; }
   .execution-intro { align-items: flex-start; }
   .execution-actions { flex-direction: column-reverse; }
   .execution-actions button { justify-content: center; }
+  .execution-submit { min-width: 0; width: 100%; }
   .execution-help { text-align: left; }
 }
