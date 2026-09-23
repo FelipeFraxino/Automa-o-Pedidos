@@ -10,6 +10,7 @@ import {
   PlayCircle, ShieldCheck
 } from 'lucide-react'
 import { supabase } from './supabase'
+import { buildPiraquaraCommand, buildPiraquaraInstruction, emptyPiraquaraForm } from './piraquara-command'
 import './styles.css'
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker
@@ -27,19 +28,17 @@ const BASE_MODELS = [
 const PIRAQUARA_EXECUTION = {
   id: 'executar-piraquara',
   name: 'Executar pedidos Piraquara',
-  description: 'Registre a execução, deixe uma observação opcional e acompanhe o andamento.',
+  description: 'Defina os pedidos, prepare o comando e acompanhe os carrinhos.',
   fixed: true,
 }
 
-const PIRAQUARA_DEFAULT_INSTRUCTION = 'execute todos os pedidos novos da Rede Piraquara em ordem cronológica, começando pelo mais antigo.'
-const buildPiraquaraCommand = (instruction, requestId) => `Execução pedidos Piraquara: ${instruction?.trim() || PIRAQUARA_DEFAULT_INSTRUCTION}${requestId ? ` Solicitação no painel: ${requestId}.` : ''}`
-
 const EXECUTION_STATUS = {
-  SOLICITADO: { title: 'Solicitação registrada', text: 'Cole o comando curto no ChatGPT Work para iniciar.', tone: 'waiting' },
-  EM_EXECUCAO: { title: 'Pedidos sendo executados', text: 'Acompanhe esta tela. Ela será atualizada automaticamente.', tone: 'running' },
-  AGUARDANDO_REVISAO: { title: 'Pedidos prontos para conferência', text: 'Os carrinhos estão prontos. Confira antes de concluir qualquer pedido.', tone: 'ready' },
-  CONCLUIDO: { title: 'Execução concluída', text: 'O processamento desta solicitação foi concluído.', tone: 'ready' },
-  ERRO: { title: 'Execução com pendência', text: 'Confira a observação abaixo e peça a continuação pelo chat.', tone: 'error' },
+  SOLICITADO: { title: 'Aguardando', tone: 'waiting' },
+  EM_EXECUCAO: { title: 'Executando', tone: 'running' },
+  PRECISA_ACAO: { title: 'Precisa da minha ação', tone: 'error' },
+  AGUARDANDO_REVISAO: { title: 'Concluído', tone: 'ready' },
+  CONCLUIDO: { title: 'Concluído', tone: 'ready' },
+  ERRO: { title: 'Erro', tone: 'error' },
 }
 
 const normalize = value => String(value ?? '').trim().toLowerCase()
@@ -991,20 +990,30 @@ function App({ session }) {
   const [comparisonLoading, setComparisonLoading] = useState('')
   const budgetFileRef = useRef(null)
   const orderFileRef = useRef(null)
-  const [piraquaraObservation, setPiraquaraObservation] = useState(() => {
+  const [piraquaraForm, setPiraquaraForm] = useState(() => {
     try {
       const saved = JSON.parse(localStorage.getItem('cbn-piraquara-execution') || 'null')
-      return saved?.notes || ''
+      return { ...emptyPiraquaraForm(), ...saved }
     } catch {
-      return ''
+      return emptyPiraquaraForm()
     }
   })
   const [piraquaraSubmitting, setPiraquaraSubmitting] = useState(false)
   const [piraquaraRequest, setPiraquaraRequest] = useState(null)
   const [piraquaraStatusError, setPiraquaraStatusError] = useState('')
-  const [piraquaraAlertsEnabled, setPiraquaraAlertsEnabled] = useState(false)
-  const audioContextRef = useRef(null)
   const previousPiraquaraStatusRef = useRef('')
+  const piraquaraInstruction = buildPiraquaraInstruction(piraquaraForm)
+  const piraquaraCommand = buildPiraquaraCommand(piraquaraInstruction)
+  const completedStores = Array.isArray(piraquaraRequest?.lojas_executadas) ? piraquaraRequest.lojas_executadas : []
+  const pendingStores = piraquaraRequest?.pendencias && typeof piraquaraRequest.pendencias === 'object'
+    ? Object.entries(piraquaraRequest.pendencias) : []
+  const requestedCount = piraquaraRequest?.pedidos_solicitados
+  const verifiedComplete = ['AGUARDANDO_REVISAO', 'CONCLUIDO'].includes(piraquaraRequest?.status)
+    && completedStores.length > 0 && pendingStores.length === 0
+    && requestedCount != null && completedStores.length === requestedCount
+  const currentStatus = piraquaraRequest?.status === 'AGUARDANDO_REVISAO' || piraquaraRequest?.status === 'CONCLUIDO'
+    ? (verifiedComplete ? EXECUTION_STATUS.CONCLUIDO : pendingStores.length ? EXECUTION_STATUS.ERRO : EXECUTION_STATUS.EM_EXECUCAO)
+    : EXECUTION_STATUS[piraquaraRequest?.status] || EXECUTION_STATUS.SOLICITADO
 
   const selected = selectedId === PIRAQUARA_EXECUTION.id
     ? PIRAQUARA_EXECUTION
@@ -1012,49 +1021,8 @@ function App({ session }) {
   const headers = workbookRows[Math.max(0, headerRow - 1)]?.map((value, index) => String(value || `Coluna ${index + 1}`).trim()) || []
 
   useEffect(() => {
-    localStorage.setItem('cbn-piraquara-execution', JSON.stringify({ notes: piraquaraObservation }))
-  }, [piraquaraObservation])
-
-  const playReadySignal = () => {
-    if (!piraquaraAlertsEnabled || !audioContextRef.current) return
-    const context = audioContextRef.current
-    if (context.state === 'suspended') context.resume()
-    const oscillator = context.createOscillator()
-    const gain = context.createGain()
-    oscillator.type = 'sine'
-    oscillator.frequency.setValueAtTime(784, context.currentTime)
-    oscillator.frequency.setValueAtTime(988, context.currentTime + 0.18)
-    gain.gain.setValueAtTime(0.0001, context.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.16, context.currentTime + 0.02)
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.45)
-    oscillator.connect(gain)
-    gain.connect(context.destination)
-    oscillator.start()
-    oscillator.stop(context.currentTime + 0.46)
-  }
-
-  const enableReadySignal = async () => {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext
-    if (!AudioContextClass) {
-      setMessage({ type: 'error', text: 'Este navegador não permite o aviso sonoro. O aviso visual continuará funcionando.' })
-      return
-    }
-    audioContextRef.current ||= new AudioContextClass()
-    await audioContextRef.current.resume()
-    setPiraquaraAlertsEnabled(true)
-    localStorage.setItem('cbn-ready-sound', 'on')
-    const context = audioContextRef.current
-    const oscillator = context.createOscillator()
-    const gain = context.createGain()
-    oscillator.frequency.value = 880
-    gain.gain.setValueAtTime(0.12, context.currentTime)
-    gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.22)
-    oscillator.connect(gain)
-    gain.connect(context.destination)
-    oscillator.start()
-    oscillator.stop(context.currentTime + 0.23)
-    setMessage({ type: 'success', text: 'Aviso sonoro ativado. Este foi o som que tocará quando os pedidos estiverem prontos.' })
-  }
+    localStorage.setItem('cbn-piraquara-execution', JSON.stringify(piraquaraForm))
+  }, [piraquaraForm])
 
   useEffect(() => {
     if (!session?.user?.id || selectedId !== PIRAQUARA_EXECUTION.id) return undefined
@@ -1062,7 +1030,7 @@ function App({ session }) {
     const loadLatestExecution = async () => {
       const { data, error } = await supabase
         .from('piraquara_execucoes')
-        .select('id, status, observacao, total_pedidos, total_itens, mensagem_erro, criado_em, concluido_em')
+        .select('id, status, observacao, pedidos_solicitados, loja_atual, lojas_executadas, pendencias, problema_acao, orientacao_acao, mensagem_erro, criado_em, concluido_em')
         .eq('user_id', session.user.id)
         .order('criado_em', { ascending: false })
         .limit(1)
@@ -1077,9 +1045,8 @@ function App({ session }) {
       const previousStatus = previousPiraquaraStatusRef.current
       setPiraquaraRequest(data)
       previousPiraquaraStatusRef.current = data.status
-      if (previousStatus && previousStatus !== data.status && ['AGUARDANDO_REVISAO', 'CONCLUIDO'].includes(data.status)) {
+      if (previousStatus && previousStatus !== data.status && ['AGUARDANDO_REVISAO', 'CONCLUIDO'].includes(data.status) && data.pedidos_solicitados != null && data.lojas_executadas?.length === data.pedidos_solicitados && !Object.keys(data.pendencias || {}).length) {
         document.title = '✅ Pedidos prontos - CBN'
-        playReadySignal()
       }
     }
     loadLatestExecution()
@@ -1088,7 +1055,7 @@ function App({ session }) {
       active = false
       window.clearInterval(timer)
     }
-  }, [session?.user?.id, selectedId, piraquaraAlertsEnabled])
+  }, [session?.user?.id, selectedId])
 
   const converted = useMemo(() => {
     if (!workbookRows.length || !eanColumn || !quantityColumn) return []
@@ -1760,37 +1727,35 @@ function App({ session }) {
   }
 
   const requestPiraquaraExecution = async () => {
-    const note = piraquaraObservation.trim()
+    const quantity = piraquaraForm.quantity === '' ? null : Number(piraquaraForm.quantity)
+    if (quantity !== null && (!Number.isSafeInteger(quantity) || quantity < 1)) {
+      setMessage({ type: 'error', text: 'Informe uma quantidade inteira maior que zero.' })
+      return
+    }
     setPiraquaraSubmitting(true)
     setMessage(null)
     const { data, error } = await supabase
       .from('piraquara_execucoes')
       .insert({
         user_id: session.user.id,
-        observacao: note,
-        escopo: note ? 'INSTRUCAO_ESPECIFICA' : 'TODOS_OS_PEDIDOS_NOVOS_DO_EMAIL',
-        versao_regras: 'piraquara-v2',
-        avisar_whatsapp: true,
+        observacao: piraquaraInstruction,
+        escopo: piraquaraInstruction === buildPiraquaraInstruction(emptyPiraquaraForm()) ? 'TODOS_OS_PEDIDOS_NOVOS_DO_EMAIL' : 'INSTRUCAO_ESPECIFICA',
+        versao_regras: 'piraquara-v3',
+        pedidos_solicitados: quantity,
+        avisar_whatsapp: false,
       })
-      .select('id, status, observacao, criado_em')
+      .select('id, status, observacao, pedidos_solicitados, loja_atual, lojas_executadas, pendencias, problema_acao, orientacao_acao, criado_em')
       .single()
     setPiraquaraSubmitting(false)
 
     if (error) {
-      setMessage({ type: 'error', text: 'Não foi possível registrar a execução. Tente novamente.' })
+      setMessage({ type: 'error', text: 'Não foi possível preparar a execução. Tente novamente.' })
       return
     }
 
     setPiraquaraRequest(data)
-    setPiraquaraObservation('')
     previousPiraquaraStatusRef.current = data.status
-    const command = buildPiraquaraCommand(note, data.id)
-    try {
-      await navigator.clipboard.writeText(command)
-      setMessage({ type: 'success', text: 'Solicitação registrada. O comando curto foi copiado: agora cole no ChatGPT Work para iniciar.' })
-    } catch {
-      setMessage({ type: 'success', text: 'Solicitação registrada. Use o botão “Copiar comando” e cole no ChatGPT Work para iniciar.' })
-    }
+    setMessage({ type: 'success', text: 'Execução preparada. Copie o comando para iniciar no Work.' })
   }
 
   const copyPiraquaraCommand = async () => {
@@ -1798,9 +1763,20 @@ function App({ session }) {
     const command = buildPiraquaraCommand(piraquaraRequest.observacao, piraquaraRequest.id)
     try {
       await navigator.clipboard.writeText(command)
-      setMessage({ type: 'success', text: 'Comando copiado. Cole aqui no ChatGPT Work para eu executar os pedidos.' })
+      setMessage({ type: 'success', text: 'Comando copiado. Abra o Work, cole e envie.' })
     } catch {
-      setMessage({ type: 'error', text: `Copie e cole no chat: ${command}` })
+      setMessage({ type: 'error', text: 'Não foi possível copiar automaticamente. Selecione o comando preparado e copie-o.' })
+    }
+  }
+
+  const copyPiraquaraContinuation = async () => {
+    if (!piraquaraRequest?.id) return
+    const command = `Continue a execução Piraquara da solicitação no painel: ${piraquaraRequest.id}. Retome de onde parou, preserve os carrinhos já preparados e não finalize pedidos.`
+    try {
+      await navigator.clipboard.writeText(command)
+      setMessage({ type: 'success', text: 'Continuação copiada. Após resolver a ação indicada, cole e envie no Work.' })
+    } catch {
+      setMessage({ type: 'error', text: 'Não foi possível copiar. Selecione a instrução de continuação abaixo.' })
     }
   }
 
@@ -1884,59 +1860,65 @@ function App({ session }) {
 
           {selectedId === PIRAQUARA_EXECUTION.id ? (
             <>
-              <div className="execution-intro">
-                <div className="execution-intro-icon"><PlayCircle size={28} /></div>
-                <div>
-                  <h2>Executar pedidos Piraquara</h2>
-                  <p>Escreva o recorte desejado; sem observação, o comando considera todos os pedidos novos, do mais antigo ao mais recente.</p>
-                </div>
-              </div>
+              <header className="piraquara-heading">
+                <div><span className="piraquara-eyebrow">Rede Piraquara</span><h2>Executar pedidos Piraquara</h2><p>Defina os pedidos e prepare o comando para o Work.</p></div>
+                <span className="piraquara-safe"><ShieldCheck size={16} /> Somente carrinhos, sem finalizar compras</span>
+              </header>
 
-              <div className="execution-card">
-                <label className="execution-notes">
-                  Observação (opcional)
-                  <textarea
-                    value={piraquaraObservation}
-                    onChange={event => setPiraquaraObservation(event.target.value)}
-                    placeholder="Ex.: execute os 3 pedidos do dia 16/09/26 começando pelo mais antigo."
-                    rows="5"
-                  />
+              <section className="execution-card piraquara-panel" aria-labelledby="piraquara-new-title">
+                <div className="piraquara-section-title"><span className="piraquara-step">1</span><h3 id="piraquara-new-title">Nova execução</h3></div>
+                <div className="piraquara-fields">
+                  <label>Data dos pedidos
+                    <input type="date" value={piraquaraForm.date} onChange={event => setPiraquaraForm(form => ({ ...form, date: event.target.value }))} />
+                  </label>
+                  <label>Quantidade de pedidos
+                    <input type="number" min="1" step="1" inputMode="numeric" value={piraquaraForm.quantity} onChange={event => setPiraquaraForm(form => ({ ...form, quantity: event.target.value }))} placeholder="Ex.: 3" />
+                  </label>
+                  <label>Ordem
+                    <select value={piraquaraForm.order} onChange={event => setPiraquaraForm(form => ({ ...form, order: event.target.value }))}>
+                      <option value="oldest">Mais antigo → mais recente</option><option value="newest">Mais recente → mais antigo</option>
+                    </select>
+                  </label>
+                  <label>Seleção específica <small>(opcional)</small>
+                    <input type="text" value={piraquaraForm.selection} onChange={event => setPiraquaraForm(form => ({ ...form, selection: event.target.value }))} placeholder="Protocolo inicial/final ou pedidos específicos" />
+                  </label>
+                </div>
+                <label className="execution-notes">Observação da execução <small>(opcional)</small>
+                  <textarea value={piraquaraForm.notes} onChange={event => setPiraquaraForm(form => ({ ...form, notes: event.target.value }))} placeholder="Ex.: Execute os 3 pedidos do dia 16/09/26 começando pelo mais antigo." rows="3" />
                 </label>
-
-                <div className="safety-note">
-                  <ShieldCheck size={22} />
-                  <div><strong>Revisão manual obrigatória</strong><span>O processo prepara o carrinho no Reppos, mas nunca finaliza, confirma ou envia a compra automaticamente.</span></div>
-                </div>
-
-                <div className="execution-actions">
-                  <button className="primary-button execution-submit" disabled={piraquaraSubmitting} onClick={requestPiraquaraExecution}>
-                    <PlayCircle size={19} /> {piraquaraSubmitting ? 'Registrando…' : 'Registrar execução'}
-                  </button>
-                </div>
-                {piraquaraRequest && (
-                  <div className={`execution-status ${EXECUTION_STATUS[piraquaraRequest.status]?.tone || 'waiting'}`}>
-                    <CheckCircle2 size={21} />
-                    <div className="execution-status-copy">
-                      <strong>{EXECUTION_STATUS[piraquaraRequest.status]?.title || 'Andamento atualizado'}</strong>
-                      <span>{piraquaraRequest.mensagem_erro || EXECUTION_STATUS[piraquaraRequest.status]?.text}</span>
-                      {(piraquaraRequest.total_pedidos > 0 || piraquaraRequest.total_itens > 0) && (
-                        <small>{piraquaraRequest.total_pedidos || 0} pedido(s) · {piraquaraRequest.total_itens || 0} item(ns)</small>
-                      )}
-                    </div>
-                    {piraquaraRequest.status === 'SOLICITADO' && (
-                      <button className="status-action" onClick={copyPiraquaraCommand}>Copiar comando</button>
-                    )}
+                <div className="command-preview"><strong>Comando gerado</strong><div className="piraquara-command" aria-live="polite">{piraquaraCommand}</div></div>
+                <div className="execution-actions"><button className="primary-button execution-submit" disabled={piraquaraSubmitting || ['EM_EXECUCAO', 'PRECISA_ACAO'].includes(piraquaraRequest?.status)} onClick={requestPiraquaraExecution}><PlayCircle size={18} /> {piraquaraSubmitting ? 'Preparando…' : 'Preparar execução'}</button></div>
+                {piraquaraRequest?.status === 'SOLICITADO' && (
+                  <div className="piraquara-next-step">
+                    <div><strong>Comando preparado</strong><p>Próximo passo: abra o Work, cole o comando copiado e envie.</p></div>
+                    <button className="primary-button" onClick={copyPiraquaraCommand}>Copiar comando para o Work</button>
+                    <code>{buildPiraquaraCommand(piraquaraRequest.observacao, piraquaraRequest.id)}</code>
                   </div>
                 )}
-                <div className="ready-alert-row">
-                  <div><strong>Aviso de conclusão</strong><span>A tela fica verde e o título da aba mostra ✅ quando os carrinhos estiverem prontos.</span></div>
-                  <button className="ghost-button" onClick={enableReadySignal} disabled={piraquaraAlertsEnabled}>
-                    {piraquaraAlertsEnabled ? 'Som ativado' : 'Ativar aviso sonoro'}
-                  </button>
+              </section>
+
+              <section className="execution-card piraquara-panel" aria-labelledby="piraquara-current-title">
+                <div className="piraquara-section-title"><span className="piraquara-step">2</span><h3 id="piraquara-current-title">Execução atual</h3><span className={`piraquara-badge ${currentStatus.tone}`}>{currentStatus.title}</span></div>
+                <div className="piraquara-metrics">
+                  <div><span>Pedidos solicitados</span><strong>{requestedCount ?? '—'}</strong></div>
+                  <div><span>Pedidos concluídos</span><strong>{piraquaraRequest ? completedStores.length : '—'}</strong></div>
+                  <div><span>Loja atual</span><strong>{piraquaraRequest?.loja_atual || '—'}</strong></div>
+                  <div><span>Progresso</span><strong>{piraquaraRequest ? `${completedStores.length} de ${requestedCount ?? '—'}` : '—'}</strong></div>
                 </div>
-                {piraquaraStatusError && <p className="execution-help error-text">{piraquaraStatusError}</p>}
-                <p className="execution-help">Para iniciar, registre e cole no ChatGPT Work o comando “Execução pedidos Piraquara: …”. A observação define o recorte desta execução.</p>
-              </div>
+                {piraquaraRequest?.status === 'PRECISA_ACAO' && (
+                  <div className="piraquara-action-needed" role="alert"><h4>⚠️ Sua ação é necessária</h4><p><strong>Problema:</strong> {piraquaraRequest.problema_acao || piraquaraRequest.mensagem_erro || 'A execução precisa de uma ação sua no Work.'}</p><p><strong>O que fazer:</strong> {piraquaraRequest.orientacao_acao || 'Confira a solicitação no Work e resolva a pendência indicada.'}</p><button className="primary-button" onClick={copyPiraquaraContinuation}>Copiar comando para continuar no Work</button><code>Continue a execução Piraquara da solicitação no painel: {piraquaraRequest.id}. Retome de onde parou, preserve os carrinhos já preparados e não finalize pedidos.</code></div>
+                )}
+                {piraquaraRequest?.status === 'ERRO' && <p className="piraquara-error">{piraquaraRequest.mensagem_erro || 'A execução parou. Confira os detalhes no Work.'}</p>}
+                {piraquaraStatusError && <p className="piraquara-error">{piraquaraStatusError}</p>}
+              </section>
+
+              {(verifiedComplete || completedStores.length > 0 || pendingStores.length > 0) && (
+                <section className={`execution-card piraquara-result ${verifiedComplete ? 'complete' : ''}`} aria-live="polite">
+                  <h3>{verifiedComplete ? '✅ Execução concluída' : 'Resultado da execução'}</h3>
+                  <p><strong>Pedidos executados — lojas:</strong> {completedStores.length ? completedStores.join(', ') : 'nenhuma'}</p>
+                  {pendingStores.length ? <><p><strong>Não concluídos — lojas:</strong> {pendingStores.map(([store]) => store).join(', ')}</p>{pendingStores.map(([store, reason]) => <p key={store}><strong>Motivo loja {store}:</strong> {String(reason)}</p>)}</> : verifiedComplete && <p><strong>Pendências:</strong> nenhuma.</p>}
+                </section>
+              )}
             </>
           ) : selectedId === 'confronto' ? (
             <>
