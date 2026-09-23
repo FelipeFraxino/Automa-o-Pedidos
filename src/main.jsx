@@ -1839,7 +1839,7 @@ function App({ session }) {
       <main>
         <header className="topbar">
           <div>
-            <p>CONVERSOR DE PEDIDOS</p>
+            <p>{selectedId === PIRAQUARA_EXECUTION.id ? 'AUTOMAÇÃO' : 'CONVERSOR DE PEDIDOS'}</p>
             <h1>{selected.name}</h1>
             <span>{selected.description}</span>
           </div>
@@ -1860,13 +1860,8 @@ function App({ session }) {
 
           {selectedId === PIRAQUARA_EXECUTION.id ? (
             <>
-              <header className="piraquara-heading">
-                <div><span className="piraquara-eyebrow">Rede Piraquara</span><h2>Executar pedidos Piraquara</h2><p>Defina os pedidos e prepare o comando para o Work.</p></div>
-                <span className="piraquara-safe"><ShieldCheck size={16} /> Somente carrinhos, sem finalizar compras</span>
-              </header>
-
               <section className="execution-card piraquara-panel" aria-labelledby="piraquara-new-title">
-                <div className="piraquara-section-title"><span className="piraquara-step">1</span><h3 id="piraquara-new-title">Nova execução</h3></div>
+                <div className="piraquara-section-title"><span className="piraquara-step">1</span><h3 id="piraquara-new-title">Nova execução</h3><span className="piraquara-safe"><ShieldCheck size={16} /> Somente carrinhos, sem finalizar compras</span></div>
                 <div className="piraquara-fields">
                   <label>Data dos pedidos
                     <input type="date" value={piraquaraForm.date} onChange={event => setPiraquaraForm(form => ({ ...form, date: event.target.value }))} />
