@@ -104,7 +104,7 @@ O repositório GitHub está público. Arquivos de clientes, base de produtos e d
 
 ## Situação atual
 
-Última atualização: 20 de setembro de 2026.
+Última atualização: 23 de setembro de 2026.
 
 Concluído:
 
@@ -461,3 +461,9 @@ Teste com `Ordem_Compra_035564.pdf` e a planilha-mãe:
 - o telefone de aviso foi guardado como segredo criptografado no Supabase e não aparece no código público;
 - o envio automático pelo WhatsApp depende da conexão futura com a API oficial da Meta ou outro provedor autorizado;
 - até essa integração ser conectada, o sistema registra a solicitação, mas não afirma que a mensagem foi enviada.
+
+## Atalho permanente do Work — 23/09/2026
+
+O comando `Execução pedidos Piraquara: [instrução específica]` foi registrado como instrução operacional do projeto em [AGENTS.md](AGENTS.md) e [docs/EXECUCAO-PEDIDOS-PIRAQUARA.md](docs/EXECUCAO-PEDIDOS-PIRAQUARA.md). A parte após os dois-pontos define o recorte daquela execução (data, quantidade, ordem, protocolos e observações). Os vídeos já fornecidos por Felipe orientam os cliques no Reppos; as regras mais recentes do projeto e a instrução específica prevalecem quando mudarem o procedimento.
+
+O painel copia o novo comando com a observação salva, inclusive ao usar “Copiar comando” novamente. Ele registra e acompanha solicitações, mas não executa os pedidos por si só. O Work deve usar sempre o conversor Piraquara do Gestão de Pedidos para gerar a planilha Reckitt/Reppos. Não há conversão local alternativa sem autorização expressa. O cliente no Reppos é conferido pelo CNPJ em “Dados entrega” do PDF; o número da loja vem de “Destino”. Cada loja só aparece em “Pedidos executados” após confirmação dos itens no seu carrinho. Nunca finalizar, confirmar, transmitir ou faturar sem autorização clara e específica.
