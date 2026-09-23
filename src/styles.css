@@ -447,13 +447,11 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
 }
 
 /* Preparação de pedidos Piraquara */
-.piraquara-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 25px; border-radius: 15px; color: #fff; background: linear-gradient(135deg, #123f66, #1c5c87); }
-.piraquara-eyebrow { color: #a9d3e9; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
-.piraquara-heading h2 { margin: 4px 0 4px; font-size: 21px; }
-.piraquara-heading p { margin: 0; color: #d8e8f1; font-size: 12px; }
-.piraquara-safe { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid rgba(255,255,255,.27); border-radius: 999px; white-space: nowrap; font-size: 10px; }
-.piraquara-panel { margin-top: 15px; padding: 21px 24px; }
+.piraquara-safe { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid #a9dbc2; border-radius: 999px; color: #246847; background: #f1fbf6; white-space: nowrap; font-size: 10px; }
+.piraquara-panel { margin-top: 0; padding: 21px 24px; }
+.piraquara-panel + .piraquara-panel { margin-top: 15px; }
 .piraquara-section-title { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.piraquara-section-title .piraquara-safe { margin-left: auto; border-color: #a9dbc2; color: #246847; background: #f1fbf6; }
 .piraquara-section-title h3 { margin: 0; color: #173a54; font-size: 16px; }
 .piraquara-step { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 8px; color: white; background: #ed6c2c; font-size: 12px; font-weight: 700; }
 .piraquara-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px 18px; }
@@ -492,8 +490,9 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
 .piraquara-result h3 { margin: 0 0 12px; color: #173a54; font-size: 18px; }
 .piraquara-result p { margin: 6px 0; color: #345369; font-size: 13px; }
 @media (max-width: 760px) {
-  .piraquara-heading { align-items: flex-start; flex-direction: column; }
   .piraquara-safe { white-space: normal; }
+  .piraquara-section-title { flex-wrap: wrap; }
+  .piraquara-section-title .piraquara-safe { margin-left: 0; }
   .piraquara-fields, .piraquara-next-step { grid-template-columns: 1fr; }
   .piraquara-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .piraquara-next-step button { width: 100%; justify-content: center; }
