@@ -445,3 +445,56 @@ td:first-child { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; co
   .status-action, .ready-alert-row button { justify-content: center; width: 100%; }
   .execution-help { text-align: left; }
 }
+
+/* Preparação de pedidos Piraquara */
+.piraquara-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 25px; border-radius: 15px; color: #fff; background: linear-gradient(135deg, #123f66, #1c5c87); }
+.piraquara-eyebrow { color: #a9d3e9; font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.piraquara-heading h2 { margin: 4px 0 4px; font-size: 21px; }
+.piraquara-heading p { margin: 0; color: #d8e8f1; font-size: 12px; }
+.piraquara-safe { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid rgba(255,255,255,.27); border-radius: 999px; white-space: nowrap; font-size: 10px; }
+.piraquara-panel { margin-top: 15px; padding: 21px 24px; }
+.piraquara-section-title { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
+.piraquara-section-title h3 { margin: 0; color: #173a54; font-size: 16px; }
+.piraquara-step { display: grid; place-items: center; width: 27px; height: 27px; border-radius: 8px; color: white; background: #ed6c2c; font-size: 12px; font-weight: 700; }
+.piraquara-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 15px 18px; }
+.piraquara-panel label { display: block; font-size: 12px; }
+.piraquara-panel label small { color: #7890a0; font-size: 11px; font-weight: 400; }
+.piraquara-panel input, .piraquara-panel textarea, .piraquara-panel select { width: 100%; margin-top: 7px; padding: 10px 12px; border: 1px solid #cbd9e5; border-radius: 8px; color: #173a54; background: #fff; font: inherit; font-size: 12px; font-weight: 400; }
+.piraquara-panel input:focus, .piraquara-panel textarea:focus, .piraquara-panel select:focus { outline: 2px solid rgba(237,108,44,.18); border-color: #ed6c2c; }
+.piraquara-panel .execution-notes { margin-top: 15px; }
+.piraquara-panel textarea { min-height: 68px; resize: vertical; }
+.piraquara-panel .command-preview { margin-top: 16px; }
+.piraquara-panel .command-preview > strong { display: block; margin-bottom: 7px; color: #173a54; font-size: 12px; }
+.piraquara-command { padding: 12px 14px; border: 1px solid #dce6ed; border-radius: 9px; color: #345369; background: #f7fafc; font-size: 12px; line-height: 1.55; overflow-wrap: anywhere; }
+.piraquara-panel .execution-actions { margin-top: 15px; }
+.piraquara-panel .execution-submit { min-width: 210px; }
+.piraquara-next-step { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px 16px; margin-top: 16px; padding: 15px; border: 1px solid #b8d8eb; border-radius: 10px; background: #f0f8fc; }
+.piraquara-next-step strong { color: #173a54; font-size: 13px; }
+.piraquara-next-step p { margin: 4px 0 0; color: #47657a; font-size: 11px; }
+.piraquara-next-step code, .piraquara-action-needed code { grid-column: 1 / -1; color: #506b7e; font-size: 10px; line-height: 1.5; overflow-wrap: anywhere; user-select: all; }
+.piraquara-badge { margin-left: auto; padding: 6px 10px; border-radius: 999px; font-size: 11px; font-weight: 700; }
+.piraquara-badge.waiting { color: #245873; background: #eaf3f9; }
+.piraquara-badge.running { color: #805512; background: #fff2d6; }
+.piraquara-badge.ready { color: #176b4b; background: #e2f6eb; }
+.piraquara-badge.error { color: #a2322a; background: #fff0ee; }
+.piraquara-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.piraquara-metrics > div { padding: 13px; border: 1px solid #e2eaf0; border-radius: 9px; background: #f9fbfd; }
+.piraquara-metrics span { display: block; color: #708899; font-size: 11px; }
+.piraquara-metrics strong { display: block; margin-top: 6px; color: #173a54; font-size: 18px; }
+.piraquara-action-needed { margin-top: 16px; padding: 16px; border: 1px solid #eccd86; border-radius: 10px; background: #fff8e7; }
+.piraquara-action-needed h4 { margin: 0 0 10px; color: #805512; font-size: 14px; }
+.piraquara-action-needed p { margin: 7px 0; color: #6d5630; font-size: 12px; }
+.piraquara-action-needed button { margin: 9px 0; }
+.piraquara-action-needed code { display: block; }
+.piraquara-error { margin: 14px 0 0; color: #a2322a; font-size: 12px; }
+.piraquara-result { margin-top: 15px; border-color: #e9c3a7; background: #fffaf6; }
+.piraquara-result.complete { border-color: #9ed6b7; background: #f0fbf5; }
+.piraquara-result h3 { margin: 0 0 12px; color: #173a54; font-size: 18px; }
+.piraquara-result p { margin: 6px 0; color: #345369; font-size: 13px; }
+@media (max-width: 760px) {
+  .piraquara-heading { align-items: flex-start; flex-direction: column; }
+  .piraquara-safe { white-space: normal; }
+  .piraquara-fields, .piraquara-next-step { grid-template-columns: 1fr; }
+  .piraquara-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .piraquara-next-step button { width: 100%; justify-content: center; }
+}
