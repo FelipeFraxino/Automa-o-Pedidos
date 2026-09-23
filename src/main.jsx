@@ -1808,7 +1808,7 @@ function App({ session }) {
           onClick={() => { setSelectedId(PIRAQUARA_EXECUTION.id); setMessage(null) }}
         >
           <PlayCircle size={19} />
-          <span><strong>Executar pedidos Piraquara</strong><small>Preparar solicitação</small></span>
+          <span><strong>Executar pedidos Piraquara</strong><small>Painel de execução</small></span>
           <ChevronRight size={16} />
         </button>
 
