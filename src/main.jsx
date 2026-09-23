@@ -806,7 +806,8 @@ function LoginScreen() {
     event.preventDefault()
     setSending(true)
     setError('')
-    const { error: authError } = await supabase.auth.signInWithPassword({ email, password })
+    const normalizedEmail = email.trim().toLowerCase()
+    const { error: authError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
     setSending(false)
     if (authError) {
       const invalid = /invalid login credentials|email not confirmed/i.test(authError.message || '')
@@ -814,16 +815,16 @@ function LoginScreen() {
     }
   }
 
-  const requestLink = async () => {
-    if (!email) {
+  const requestRecovery = async () => {
+    const normalizedEmail = email.trim().toLowerCase()
+    if (!normalizedEmail) {
       setError('Informe seu e-mail para receber o link de recuperação.')
       return
     }
     setSending(true)
     setError('')
-    const { error: authError } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: 'https://felipefraxino.github.io/Automa-o-Pedidos/', shouldCreateUser: true },
+    const { error: authError } = await supabase.auth.resetPasswordForEmail(normalizedEmail, {
+      redirectTo: 'https://felipefraxino.github.io/Automa-o-Pedidos/',
     })
     setSending(false)
     if (authError) {
@@ -856,14 +857,14 @@ function LoginScreen() {
               </label>
               {error && <div className="login-error">{error}</div>}
               <button disabled={sending}>{sending ? 'Entrando…' : 'Entrar'}</button>
-              <button className="login-link-button" type="button" disabled={sending} onClick={requestLink}>Esqueci a senha ou preciso de um link</button>
+              <button className="login-link-button" type="button" disabled={sending} onClick={requestRecovery}>Esqueci minha senha</button>
             </form>
           </>
         ) : (
           <div className="login-sent">
             <CheckCircle2 size={32} />
             <strong>Confira seu e-mail</strong>
-            <span>Enviamos um link de recuperação para {email}.</span>
+            <span>Enviamos um link seguro para você definir uma nova senha em {email.trim().toLowerCase()}.</span>
             <button onClick={() => setSent(false)}>Voltar para entrar com senha</button>
           </div>
         )}
@@ -872,17 +873,76 @@ function LoginScreen() {
   )
 }
 
+function PasswordRecoveryScreen({ onComplete }) {
+  const [password, setPassword] = useState('')
+  const [confirmation, setConfirmation] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+
+  const updatePassword = async event => {
+    event.preventDefault()
+    setError('')
+    if (password.length < 8) {
+      setError('A nova senha precisa ter pelo menos 8 caracteres.')
+      return
+    }
+    if (password !== confirmation) {
+      setError('As duas senhas não são iguais.')
+      return
+    }
+    setSaving(true)
+    const { error: authError } = await supabase.auth.updateUser({ password })
+    setSaving(false)
+    if (authError) {
+      setError(/same_password/i.test(authError.code || authError.message || '')
+        ? 'Escolha uma senha diferente da senha anterior.'
+        : 'Não foi possível salvar a nova senha. Solicite outro link e tente novamente.')
+      return
+    }
+    window.history.replaceState({}, document.title, window.location.pathname)
+    onComplete()
+  }
+
+  return (
+    <main className="login-page">
+      <section className="login-card">
+        <div className="login-brand"><KeyRound size={28} /></div>
+        <p>GESTÃO DE PEDIDOS - CBN DISTRIBUIDORA</p>
+        <h1>Defina sua nova senha</h1>
+        <span>Crie uma senha segura. Ela não será exibida nem enviada por e-mail.</span>
+        <form onSubmit={updatePassword}>
+          <label>Nova senha
+            <div className="email-field"><KeyRound size={18} /><input type="password" autoComplete="new-password" minLength="8" required value={password} onChange={event => setPassword(event.target.value)} placeholder="Pelo menos 8 caracteres" /></div>
+          </label>
+          <label>Confirme a nova senha
+            <div className="email-field"><KeyRound size={18} /><input type="password" autoComplete="new-password" minLength="8" required value={confirmation} onChange={event => setConfirmation(event.target.value)} placeholder="Digite novamente" /></div>
+          </label>
+          {error && <div className="login-error">{error}</div>}
+          <button disabled={saving}>{saving ? 'Salvando…' : 'Salvar nova senha e entrar'}</button>
+        </form>
+      </section>
+    </main>
+  )
+}
+
 function AuthenticatedApp() {
   const [session, setSession] = useState(undefined)
+  const [recoveringPassword, setRecoveringPassword] = useState(() =>
+    `${window.location.search}${window.location.hash}`.includes('type=recovery')
+  )
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session))
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, nextSession) => setSession(nextSession))
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession)
+      if (event === 'PASSWORD_RECOVERY') setRecoveringPassword(true)
+    })
     return () => subscription.unsubscribe()
   }, [])
 
   if (session === undefined) return <div className="auth-loading">Carregando…</div>
   if (!session) return <LoginScreen />
+  if (recoveringPassword) return <PasswordRecoveryScreen onComplete={() => setRecoveringPassword(false)} />
   return <App session={session} />
 }
 
