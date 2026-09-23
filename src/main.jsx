@@ -1888,7 +1888,7 @@ function App({ session }) {
                 </label>
                 <div className="command-preview"><strong>Comando gerado</strong><div className="piraquara-command" aria-live="polite">{piraquaraCommand}</div></div>
                 <div className="execution-actions"><button className="primary-button execution-submit" disabled={piraquaraSubmitting || ['EM_EXECUCAO', 'PRECISA_ACAO'].includes(piraquaraRequest?.status)} onClick={requestPiraquaraExecution}><PlayCircle size={18} /> {piraquaraSubmitting ? 'Preparando…' : 'Preparar execução'}</button></div>
-                {piraquaraRequest?.status === 'SOLICITADO' && (
+                {piraquaraRequest?.status === 'SOLICITADO' && piraquaraRequest.observacao === piraquaraInstruction && (
                   <div className="piraquara-next-step">
                     <div><strong>Comando preparado</strong><p>Próximo passo: abra o Work, cole o comando copiado e envie.</p></div>
                     <button className="primary-button" onClick={copyPiraquaraCommand}>Copiar comando para o Work</button>
