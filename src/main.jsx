@@ -1768,7 +1768,7 @@ function App({ session }) {
       .insert({
         user_id: session.user.id,
         observacao: note,
-        escopo: 'TODOS_OS_PEDIDOS_NOVOS_DO_EMAIL',
+        escopo: note ? 'INSTRUCAO_ESPECIFICA' : 'TODOS_OS_PEDIDOS_NOVOS_DO_EMAIL',
         versao_regras: 'piraquara-v2',
         avisar_whatsapp: true,
       })
