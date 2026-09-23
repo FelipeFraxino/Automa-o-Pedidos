@@ -59,8 +59,16 @@ npm run dev
 
 Não envie a base de produtos, pedidos ou PDFs de clientes ao repositório enquanto ele estiver público. Esses dados serão armazenados de forma privada no Supabase.
 
+
+## Execução assistida Piraquara no Work
+
+Use `Execução pedidos Piraquara: [instrução específica]` no ChatGPT Work com este projeto aberto. A instrução após os dois-pontos define o recorte e a ordem daquela execução. O painel também registra a solicitação e copia esse comando, preservando a observação quando ele é copiado novamente. A solicitação no painel, por si só, não processa pedidos.
+
+Procedimento completo: [Execução pedidos Piraquara](docs/EXECUCAO-PEDIDOS-PIRAQUARA.md). O Work segue [AGENTS.md](AGENTS.md) e para antes de finalizar qualquer compra.
+
 ## Documentação
 
 - [Mapeamento dos arquivos](docs/MAPEAMENTO-DOS-ARQUIVOS.md)
 - [Prompt mestre](docs/PROMPT-MESTRE.md)
+- [Execução pedidos Piraquara](docs/EXECUCAO-PEDIDOS-PIRAQUARA.md)
 - [Documento do projeto](Automatiza%C3%A7%C3%A3o%20CBN.md)
