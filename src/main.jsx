@@ -31,6 +31,9 @@ const PIRAQUARA_EXECUTION = {
   fixed: true,
 }
 
+const PIRAQUARA_DEFAULT_INSTRUCTION = 'execute todos os pedidos novos da Rede Piraquara em ordem cronológica, começando pelo mais antigo.'
+const buildPiraquaraCommand = (instruction, requestId) => `Execução pedidos Piraquara: ${instruction?.trim() || PIRAQUARA_DEFAULT_INSTRUCTION}${requestId ? ` Solicitação no painel: ${requestId}.` : ''}`
+
 const EXECUTION_STATUS = {
   SOLICITADO: { title: 'Solicitação registrada', text: 'Cole o comando curto no ChatGPT Work para iniciar.', tone: 'waiting' },
   EM_EXECUCAO: { title: 'Pedidos sendo executados', text: 'Acompanhe esta tela. Ela será atualizada automaticamente.', tone: 'running' },
@@ -1059,7 +1062,7 @@ function App({ session }) {
     const loadLatestExecution = async () => {
       const { data, error } = await supabase
         .from('piraquara_execucoes')
-        .select('id, status, total_pedidos, total_itens, mensagem_erro, criado_em, concluido_em')
+        .select('id, status, observacao, total_pedidos, total_itens, mensagem_erro, criado_em, concluido_em')
         .eq('user_id', session.user.id)
         .order('criado_em', { ascending: false })
         .limit(1)
@@ -1757,18 +1760,19 @@ function App({ session }) {
   }
 
   const requestPiraquaraExecution = async () => {
+    const note = piraquaraObservation.trim()
     setPiraquaraSubmitting(true)
     setMessage(null)
     const { data, error } = await supabase
       .from('piraquara_execucoes')
       .insert({
         user_id: session.user.id,
-        observacao: piraquaraObservation.trim(),
+        observacao: note,
         escopo: 'TODOS_OS_PEDIDOS_NOVOS_DO_EMAIL',
-        versao_regras: 'piraquara-v1',
+        versao_regras: 'piraquara-v2',
         avisar_whatsapp: true,
       })
-      .select('id, status, criado_em')
+      .select('id, status, observacao, criado_em')
       .single()
     setPiraquaraSubmitting(false)
 
@@ -1780,8 +1784,7 @@ function App({ session }) {
     setPiraquaraRequest(data)
     setPiraquaraObservation('')
     previousPiraquaraStatusRef.current = data.status
-    const note = piraquaraObservation.trim()
-    const command = `Execute os pedidos novos da Rede Piraquara. Solicitação: ${data.id}.${note ? ` Observação: ${note}` : ''}`
+    const command = buildPiraquaraCommand(note, data.id)
     try {
       await navigator.clipboard.writeText(command)
       setMessage({ type: 'success', text: 'Solicitação registrada. O comando curto foi copiado: agora cole no ChatGPT Work para iniciar.' })
@@ -1792,7 +1795,7 @@ function App({ session }) {
 
   const copyPiraquaraCommand = async () => {
     if (!piraquaraRequest?.id) return
-    const command = `Execute os pedidos novos da Rede Piraquara. Solicitação: ${piraquaraRequest.id}.`
+    const command = buildPiraquaraCommand(piraquaraRequest.observacao, piraquaraRequest.id)
     try {
       await navigator.clipboard.writeText(command)
       setMessage({ type: 'success', text: 'Comando copiado. Cole aqui no ChatGPT Work para eu executar os pedidos.' })
@@ -1885,7 +1888,7 @@ function App({ session }) {
                 <div className="execution-intro-icon"><PlayCircle size={28} /></div>
                 <div>
                   <h2>Executar pedidos Piraquara</h2>
-                  <p>O sistema considera todos os pedidos novos recebidos no e-mail.</p>
+                  <p>Escreva o recorte desejado; sem observação, o comando considera todos os pedidos novos, do mais antigo ao mais recente.</p>
                 </div>
               </div>
 
@@ -1895,7 +1898,7 @@ function App({ session }) {
                   <textarea
                     value={piraquaraObservation}
                     onChange={event => setPiraquaraObservation(event.target.value)}
-                    placeholder="Ex.: conferir a loja 02 com atenção ou ignorar um pedido específico…"
+                    placeholder="Ex.: execute os 3 pedidos do dia 16/09/26 começando pelo mais antigo."
                     rows="5"
                   />
                 </label>
@@ -1932,7 +1935,7 @@ function App({ session }) {
                   </button>
                 </div>
                 {piraquaraStatusError && <p className="execution-help error-text">{piraquaraStatusError}</p>}
-                <p className="execution-help">Para iniciar, registre a solicitação e cole o comando curto no ChatGPT Work. As regras ficam guardadas internamente.</p>
+                <p className="execution-help">Para iniciar, registre e cole no ChatGPT Work o comando “Execução pedidos Piraquara: …”. A observação define o recorte desta execução.</p>
               </div>
             </>
           ) : selectedId === 'confronto' ? (
