@@ -1,6 +1,6 @@
 # Comando permanente: Execução pedidos Piraquara
 
-Definido por Felipe em 23/09/2026. Este é o procedimento operacional do ChatGPT Work para a Rede Piraquara. O painel do Gestão de Pedidos apenas registra uma solicitação e copia o comando; a execução assistida depende do Work e de uma sessão autorizada nos serviços.
+Definido por Felipe em 23/09/2026. Este é o procedimento operacional do ChatGPT Work para a Rede Piraquara. O painel do Gestão de Pedidos prepara uma solicitação e fornece o comando; o usuário deve copiá-lo e enviá-lo no Work. O painel não inicia o Work por conta própria.
 
 ## Acionamento e prioridade
 
@@ -15,7 +15,15 @@ Exemplos válidos:
 - `Execução pedidos Piraquara: execute os 3 pedidos do dia 16/09/26 começando pelo mais antigo.`
 - `Execução pedidos Piraquara: comece pelo protocolo 092689848356 e execute os próximos 2 pedidos.`
 
-Se o comando incluir `Solicitação no painel: <id>`, usar o identificador para acompanhar a solicitação registrada sem alterar o recorte descrito antes dele. O texto da observação deve continuar disponível no botão “Copiar comando” mesmo depois de registrar e atualizar a página.
+Se o comando incluir `Solicitação no painel: <id>`, usar o identificador para acompanhar a solicitação preparada sem alterar o recorte descrito antes dele. O texto da instrução permanece no botão “Copiar comando” após atualizar a página.
+
+## Acompanhamento no painel
+
+Após receber o comando no Work, atualizar somente a linha `public.piraquara_execucoes` identificada pelo UUID incluído no comando. `SOLICITADO` significa aguardando envio ao Work; `EM_EXECUCAO` indica processamento; `PRECISA_ACAO` indica uma ação indispensável de Felipe; `AGUARDANDO_REVISAO` ou `CONCLUIDO` só cabem quando todos os carrinhos solicitados foram verificados; `ERRO` indica falha que impede prosseguir. Não mudar o status para execução apenas porque a página preparou o comando.
+
+Preencher `pedidos_solicitados` quando o recorte estiver definido, mesmo que o comando livre não tenha informado um número no formulário. `loja_atual` é o destino em dois dígitos. Acrescentar a `lojas_executadas` apenas após conferir os itens no carrinho correto do Reppos; o painel deriva `Pedidos concluídos` dessa lista. `pendencias` é um objeto JSON com a loja como chave e o motivo curto como valor, por exemplo `{"04":"Cliente não localizado pelo CNPJ"}`. Para `PRECISA_ACAO`, preencher `problema_acao` e `orientacao_acao` com instrução objetiva; a tela oferece um comando de continuação para copiar ao Work depois da ação. Limpar a pendência correspondente ao retomar e manter as lojas já verificadas. Não gravar CNPJ, PDFs ou itens comerciais nesses campos.
+
+Se o Work não conseguir atualizar o banco, comunicar isso na resposta: o painel não deve inventar andamento. A execução do Work continua sendo a fonte da verdade operacional.
 
 ## Procedimento obrigatório por pedido
 
