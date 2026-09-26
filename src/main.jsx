@@ -82,6 +82,8 @@ const resolveTrustedIndustry = (item, industryMap, codeMap = {}) => {
   }
   const declared = String(item?.Industria || '').toUpperCase()
   if (declared === 'LOREAL' || declared === '3M') return declared
+  // O pedido Condor identifica expressamente Sustagen, vendido no Reppos/Reckitt.
+  if (declared === 'RECKITT' && /sustagen/.test(normalize(item?.Item))) return 'RECKITT'
   const inferred = inferIndustryFromItem(item?.Item)
   return inferred === 'RECKITT' ? 'NAO_IDENTIFICADA' : inferred
 }
@@ -250,6 +252,54 @@ const parseJhlPurchaseOrder = pages => {
   return rows
 }
 
+const parseCondorPurchaseOrder = pages => {
+  const rows = []
+  for (const lines of pages) {
+    let pending = null
+    const finish = () => {
+      if (!pending) return
+      if (!pending.EAN || !pending.packSize) {
+        throw new Error(`EAN ou embalagem ausente para o produto ${pending.CodigoInterno}.`)
+      }
+      const Quantidade = pending.boxes * pending.packSize
+      rows.push({
+        EAN: pending.EAN,
+        CodigoInterno: pending.CodigoInterno,
+        Item: pending.Item,
+        Quantidade,
+        ValorUnitario: pending.ValorTotal / Quantidade,
+        ValorTotal: pending.ValorTotal,
+        Industria: 'RECKITT',
+      })
+      pending = null
+    }
+    for (const line of lines) {
+      const text = line.items.map(item => item.text).join(' ').trim()
+      const product = text.match(/^(\d{8})\s+(.+?\bSUSTAGEN\b.+?)\s+(\d[\d.]*,\d{2})\s+(\d+)\s+\d+\s+(\d[\d.]*,\d{2})\s*$/i)
+      if (product) {
+        finish()
+        const boxes = Number(product[4])
+        const price = parsePdfMoney(product[3])
+        const total = parsePdfMoney(product[5])
+        if (!boxes || Math.abs(price * boxes - total) > 0.02) {
+          throw new Error(`Quantidade ou valor divergente no produto ${product[1]}.`)
+        }
+        pending = { CodigoInterno: product[1], Item: product[2], boxes, ValorTotal: total }
+      } else if (pending) {
+        const pack = text.match(/\(\s*CX\s*\/\s*(\d+)\s*\)/i)
+        const ean = text.match(/\b\d{13}\b/)
+        if (pack && ean) {
+          pending.packSize = Number(pack[1])
+          pending.EAN = ean[0]
+        }
+      }
+    }
+    finish()
+  }
+  if (!rows.length) throw new Error('Não encontrei produtos Condor com EAN e embalagem CX neste PDF.')
+  return rows
+}
+
 const readPdfOrder = async file => {
   const data = new Uint8Array(await file.arrayBuffer())
   const document = await pdfjsLib.getDocument({ data }).promise
@@ -270,6 +320,7 @@ const readPdfOrder = async file => {
   else if (normalizedText.includes('hermes') || normalizedText.includes('sugestao de pedido')) modelId = 'ouro-branco'
   else if (normalizedText.includes('cbn distribuidora') && normalizedText.includes('orcamento')) modelId = 'flex-cbn'
   else if (normalizedText.includes('jhl produtos de higiene') && normalizedText.includes('pedido de compra')) modelId = 'personalizado'
+  else if (normalizedText.includes('condor super center') && normalizedText.includes('pedido de compra')) modelId = 'personalizado'
 
   if (!modelId) {
     throw new Error(
@@ -283,6 +334,12 @@ const readPdfOrder = async file => {
     const rows = parseJhlPurchaseOrder(pages)
     if (!rows.length) throw new Error('Não encontrei itens válidos nesta Ordem de Compra.')
     const documentTotal = Math.round(rows.reduce((sum, item) => sum + (item.ValorTotal || 0), 0) * 100) / 100
+    return { modelId, rows, documentTotal, storeInfo: null }
+  }
+
+  if (modelId === 'personalizado' && normalizedText.includes('condor super center')) {
+    const rows = parseCondorPurchaseOrder(pages)
+    const documentTotal = Math.round(rows.reduce((sum, item) => sum + item.ValorTotal, 0) * 100) / 100
     return { modelId, rows, documentTotal, storeInfo: null }
   }
 
