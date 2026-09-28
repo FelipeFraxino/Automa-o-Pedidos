@@ -865,12 +865,31 @@ function LoginScreen() {
     event.preventDefault()
     setSending(true)
     setError('')
-    const normalizedEmail = email.trim().toLowerCase()
-    const { error: authError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
-    setSending(false)
-    if (authError) {
-      const invalid = /invalid login credentials|email not confirmed/i.test(authError.message || '')
-      setError(invalid ? 'E-mail ou senha incorretos.' : 'Não foi possível entrar agora. Tente novamente.')
+    try {
+      const normalizedEmail = email.trim().toLowerCase()
+      const { error: authError } = await supabase.auth.signInWithPassword({ email: normalizedEmail, password })
+      if (!authError) return
+
+      const code = String(authError.code || '').toLowerCase()
+      const message = String(authError.message || '')
+      const status = Number(authError.status) || 0
+      if (code === 'invalid_credentials' || /invalid login credentials/i.test(message)) {
+        setError('E-mail ou senha incorretos.')
+      } else if (code === 'email_not_confirmed' || /email not confirmed/i.test(message)) {
+        setError('Este e-mail ainda precisa ser confirmado.')
+      } else if (status === 429 || /rate.?limit|too many requests/i.test(code + ' ' + message)) {
+        setError('Muitas tentativas de entrada. Aguarde alguns minutos antes de tentar novamente.')
+      } else if (/failed to fetch|networkerror|network request failed|fetch_error/i.test(code + ' ' + message)) {
+        setError('Não foi possível conectar ao serviço de entrada neste navegador. Verifique a conexão ou bloqueios de extensões e tente novamente.')
+      } else {
+        const reference = [code && `código ${code}`, status && `HTTP ${status}`].filter(Boolean).join(', ')
+        setError(`Falha no serviço de entrada${reference ? ` (${reference})` : ''}. Tente novamente em instantes.`)
+      }
+    } catch (loginError) {
+      console.error('Falha inesperada no login:', loginError)
+      setError('Não foi possível conectar ao serviço de entrada neste navegador. Verifique a conexão ou bloqueios de extensões e tente novamente.')
+    } finally {
+      setSending(false)
     }
   }
 
