@@ -21,7 +21,7 @@ const BASE_MODELS = [
   { id: 'adega-brasil', name: 'WG Adega Brasil', description: 'Quantidade direta; embalagem é apenas a apresentação do produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
   { id: 'dalpar', name: 'Dalpar', description: 'Pedido recebido como imagem; separação por marca e produto', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
   { id: 'flex-cbn', name: 'Orçamento Flex CBN', description: 'Prefixos RB, LO e SB identificam a indústria', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
-  { id: 'personalizado', name: 'Modelo variável', description: 'Leitura completa para Excel, PDF, foto ou print, com revisão antes da exportação', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
+  { id: 'personalizado', name: 'Modelo variável', description: 'Leitura completa para Excel, TXT, PDF, foto ou print, com revisão antes da exportação', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: false },
   { id: 'confronto', name: 'Confronto de arquivos', description: 'Compare o orçamento enviado com o pedido recebido', headerRow: 1, eanColumn: '', quantityColumn: '', packageColumn: '', quantityMode: 'direct', fixed: true },
 ]
 
@@ -76,7 +76,7 @@ const buildTrustedCatalogMaps = records => {
 const resolveTrustedIndustry = (item, industryMap, codeMap = {}) => {
   const ean = cleanEan(item?.EAN)
   if (ean && industryMap[ean]) return industryMap[ean]
-  if (!ean) {
+  if (!ean && !item?.CodigoCliente) {
     const codeMatch = codeMap[normalizeCatalogCode(item?.CodigoInterno)]
     if (codeMatch?.Industria) return codeMatch.Industria
   }
@@ -91,7 +91,7 @@ const resolveTrustedIndustry = (item, industryMap, codeMap = {}) => {
 const enrichRowsFromTrustedCatalog = (rows, industryMap, codeMap) => rows.map(item => {
   const EAN = cleanEan(item.EAN)
   if (EAN && industryMap[EAN]) return { ...item, EAN, Industria: industryMap[EAN] }
-  if (!EAN && item.CodigoInterno) {
+  if (!EAN && item.CodigoInterno && !item.CodigoCliente) {
     const match = codeMap[normalizeCatalogCode(item.CodigoInterno)]
     if (match) return { ...item, EAN: match.EAN, Industria: match.Industria }
   }
@@ -578,7 +578,59 @@ const parseAdegaText = (text, catalog = {}) => {
   return mergeAdegaOcrRows(rows)
 }
 
+// Códigos do cliente, não códigos CBN. O EAN só é usado quando a descrição
+// corresponde ao produto conferido. 31.514: versão Original, confirmada por Felipe.
+const FABESUL_PRODUCTS = {
+  '31274': { EAN: '7891035002588', description: /veja/, variant: /lirio do nilo|banho do cheiro/ },
+  '31514': { EAN: '7891035210006', description: /veja/, variant: /multiuso.*orig/ },
+  '32404': { EAN: '7891035000270', description: /veja/, variant: /tulipa holandesa|frutas tropicais/ },
+}
+
+const decodeOrderText = async file => {
+  const bytes = new Uint8Array(await file.arrayBuffer())
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return new TextDecoder('windows-1252').decode(bytes)
+  }
+}
+
+const parseFabesulText = text => {
+  if (!/ordem de compra\s*:/i.test(text) || !normalize(text).includes('fabesul')) return null
+  const table = text.match(/(?:^|\n)\s*PRODUTOS\s*\r?\n([\s\S]*?)(?=VALOR TOTAL DA ORDEM DE COMPRA)/i)?.[1]
+  if (!table) throw new Error('A ordem Fabesul não contém a tabela de produtos completa.')
+  const rows = []
+  const number = '(\\d{1,3}(?:\\.\\d{3})*,\\d+|\\d+,\\d+)'
+  const pattern = new RegExp('^(\\d[\\d.]*)\\s+(.+?)\\s+(UN|UND|UNID)\\s+' + number + '\\s+' + number + '\\s+' + number + '\\s+\\d+(?:[.,]\\d+)?\\s+\\d+(?:[.,]\\d+)?\\s+' + number + '\\s*$', 'i')
+  for (const rawLine of table.split(/\r?\n/)) {
+    if (!/^\s*\d[\d.]*\s+/.test(rawLine)) continue
+    const match = rawLine.trim().match(pattern)
+    if (!match) throw new Error('Uma linha da ordem Fabesul não foi reconhecida. Confira a unidade e as colunas do arquivo.')
+    const [, CodigoInterno, Item, , quantity, unitPrice, total] = match
+    const Quantidade = parsePdfMoney(quantity)
+    const ValorUnitario = parsePdfMoney(unitPrice)
+    const ValorTotal = parsePdfMoney(total)
+    if (!Number.isInteger(Quantidade) || Quantidade <= 0 || Math.abs(Quantidade * ValorUnitario - ValorTotal) > 0.02) {
+      throw new Error(`Quantidade ou valor inconsistente no código ${CodigoInterno}.`)
+    }
+    const product = FABESUL_PRODUCTS[CodigoInterno.replace(/\./g, '')]
+    const name = normalize(Item)
+    const EAN = product && /500\s*ml/.test(name) && product.description.test(name) && product.variant.test(name) ? product.EAN : ''
+    rows.push({ EAN, CodigoInterno, CodigoCliente: true, Item, Quantidade, ValorUnitario, ValorTotal })
+  }
+  if (!rows.length) throw new Error('Nenhum produto foi reconhecido na ordem Fabesul.')
+  const totalMatch = text.match(/VALOR TOTAL DA ORDEM DE COMPRA S\/IPI\s*:\s*([\d.,]+)/i)
+  const documentTotal = parsePdfMoney(totalMatch?.[1])
+  const itemsTotal = rows.reduce((sum, row) => sum + row.ValorTotal, 0)
+  if (!totalMatch || Math.abs(documentTotal - itemsTotal) > 0.02) {
+    throw new Error('O total dos produtos não confere com o total sem IPI da ordem Fabesul.')
+  }
+  return { rows, documentTotal }
+}
+
 const parseVariableText = (text, catalog = {}) => {
+  const fabesulOrder = parseFabesulText(text)
+  if (fabesulOrder) return fabesulOrder.rows
   const normalizedDocument = normalize(text)
   const hasAdegaLayout = normalizedDocument.includes('adega brasil') ||
     normalizedDocument.includes('adeg a brasil') ||
@@ -1337,11 +1389,35 @@ function App({ session }) {
   const readFile = async (file, append = false) => {
     if (!file) return
     const extension = file.name.split('.').pop()?.toLowerCase()
-    if (!['xlsx', 'xls', 'csv', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
-      setMessage({ type: 'error', text: 'Use Excel, CSV, PDF, PNG, JPG ou WEBP.' })
+    if (!['xlsx', 'xls', 'csv', 'txt', 'pdf', 'png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
+      setMessage({ type: 'error', text: 'Use Excel, CSV, TXT, PDF, PNG, JPG ou WEBP.' })
       return -1
     }
     try {
+      if (extension === 'txt') {
+        const text = await decodeOrderText(file)
+        const parsed = parseFabesulText(text)
+        const rows = enrichRowsWithCatalog(parsed ? parsed.rows : parseVariableText(text, catalogIndustries))
+        if (!rows.length) throw new Error('Nenhum produto foi reconhecido no TXT. Envie a tabela completa do pedido.')
+        const documentTotal = parsed?.documentTotal ?? extractPrintedDocumentTotal(text)
+        await registerNewCatalogItems(rows)
+        if (!append) setSelectedId('personalizado')
+        setPiraquaraStoreInfo(previous => append ? previous : null)
+        setSourceOrderTotal(previous => append ? previous + documentTotal : documentTotal)
+        setOrderDetails(previous => mergeItemsByEan(append ? [...previous, ...rows] : rows))
+        setWorkbookRows(previous => {
+          const added = rows.map(row => [row.EAN, row.Quantidade, row.Industria || ''])
+          return append && previous.length ? [previous[0], ...previous.slice(1), ...added] : [['EAN', 'Quantidade', 'Industria'], ...added]
+        })
+        setFileName(previous => addFileName(previous, file.name, append))
+        setSheetName(parsed ? 'Ordem de compra Fabesul' : 'Pedido lido de TXT')
+        setHeaderRow(1)
+        setEanColumn('EAN')
+        setQuantityColumn('Quantidade')
+        setPackageColumn('')
+        setQuantityMode('direct')
+        return rows.length
+      }
       if (['png', 'jpg', 'jpeg', 'webp'].includes(extension)) {
         setMessage({ type: 'success', text: `Lendo ${file.name} por OCR. Isso pode levar alguns minutos…` })
         const recognizedText = await recognizeImage(file)
@@ -2090,7 +2166,7 @@ function App({ session }) {
               onDrop={event => { event.preventDefault(); setIsDragging(false); stageFiles(event.dataTransfer.files, false) }}
               onClick={() => !pendingFiles.length && fileRef.current?.click()}
             >
-              <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => stageFiles(event.target.files, false)} hidden />
+              <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.txt,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => stageFiles(event.target.files, false)} hidden />
               {pendingFiles.length ? (
                 <>
                   <div className="upload-icon"><FileSpreadsheet size={34} /></div>
@@ -2110,7 +2186,7 @@ function App({ session }) {
                   <div className="upload-icon"><UploadCloud size={34} /></div>
                   <h2>Envie a planilha do cliente</h2>
                   <p>Arraste um ou vários arquivos para cá ou clique para escolher</p>
-                  <span>Excel, CSV, PDF, fotos ou prints</span>
+                  <span>Excel, CSV, TXT, PDF, fotos ou prints</span>
                   <button>Selecionar arquivo(s)</button>
                 </>
               )}
@@ -2120,7 +2196,7 @@ function App({ session }) {
               <div className="file-card">
                 <div className="file-icon"><FileSpreadsheet size={25} /></div>
                 <div><strong>{fileName}</strong><span>{sheetName} · {workbookRows.length} linhas combinadas</span></div>
-                <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => stageFiles(event.target.files, true)} hidden />
+                <input ref={fileRef} type="file" multiple accept=".xlsx,.xls,.csv,.txt,.pdf,.png,.jpg,.jpeg,.webp" onChange={event => stageFiles(event.target.files, true)} hidden />
                 <div className="file-card-actions">
                   <button onClick={() => fileRef.current?.click()}><Plus size={16} /> Adicionar mais arquivos</button>
                   <button onClick={resetFile}><RotateCcw size={16} /> Limpar</button>
@@ -2294,3 +2370,4 @@ function App({ session }) {
 }
 
 createRoot(document.getElementById('root')).render(<React.StrictMode><AuthenticatedApp /></React.StrictMode>)
+
